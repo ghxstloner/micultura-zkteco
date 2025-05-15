@@ -109,7 +109,7 @@ return [
             'prefix' => '',
             'prefix_indexes' => true,
             'options' => [
-                'TrustServerCertificate' => 'yes',
+                'Encrypt' => 'no',
             ],
         ],
 
