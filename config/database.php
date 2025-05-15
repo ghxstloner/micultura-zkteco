@@ -110,11 +110,10 @@ return [
             'prefix_indexes' => true,
             'encrypt' => false,
             'trust_server_certificate' => true,
-            /*  'options' => [
-                'Encrypt' => true,
+            'options' => [
+                'Encrypt' => 'Yes',
                 'TrustServerCertificate' => true,
             ],
-            */
         ],
 
     ],
