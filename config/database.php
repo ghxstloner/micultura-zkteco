@@ -108,10 +108,9 @@ return [
             'charset' => env('DB_CHARSET', 'utf8'),
             'prefix' => '',
             'prefix_indexes' => true,
-            'options' => [
-                'Encrypt' => 'optional',  // Usar 'optional' es lo mismo que 'no'
-                'TrustServerCertificate' => 'yes'
-            ],
+            'encrypt' => false,  // Usa el valor booleano false a nivel raíz
+            'trust_server_certificate' => true,  // Usa el valor booleano true a nivel raíz
+            'options' => [],  // Mantén options vacío para evitar conflictos
         ],
 
     ],
