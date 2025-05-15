@@ -111,7 +111,7 @@ return [
             'encrypt' => true,
             'trust_server_certificate' => true,
             'options' => [
-                PDO::SQLSRV_ATTR_ENCRYPT => 1,  // SQLSRV_ENCRYPT_ON
+                'Encrypt' => true,
                 'TrustServerCertificate' => true,
             ],
         ],
