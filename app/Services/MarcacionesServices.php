@@ -53,7 +53,9 @@ class MarcacionesServices
                 Log::info("Planificación encontrada ID: {$planificacion->id}, Vuelo: {$planificacion->numero_vuelo}, Hora: {$planificacion->hora_vuelo}");
 
                 // 3. Validar si se permite la marcación según la hora_vuelo
-                $horaVueloPlanificada = Carbon::parse($planificacion->fecha_vuelo . ' ' . $planificacion->hora_vuelo);
+                $fechaSoloString = Carbon::parse($planificacion->fecha_vuelo)->format('Y-m-d');
+                $horaVueloPlanificada = Carbon::parse($fechaSoloString . ' ' . $planificacion->hora_vuelo);
+
                 $puedeMarcar = false;
 
                 if ($tiempoMarcacionCompleto->lessThanOrEqualTo($horaVueloPlanificada)) {
