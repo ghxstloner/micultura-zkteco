@@ -16,36 +16,52 @@ class MarcacionesServices
     {
         foreach ($proFxAttLogList as $proFxAttLog) {
             try {
-                $id_tripulante = intval($proFxAttLog->USER_PIN);
+                $crew_id = $proFxAttLog->USER_PIN;
                 $tiempoMarcacionCompleto = Carbon::parse($proFxAttLog->VERIFY_TIME);
                 $fechaMarcacion = $tiempoMarcacionCompleto->toDateString();
                 $horaMarcacion = $tiempoMarcacionCompleto->toTimeString(); // HH:MM:SS
 
-                Log::info("Procesando marcación para Tripulante ID: {$id_tripulante} en Fecha: {$fechaMarcacion} Hora: {$horaMarcacion}");
+                // Asumimos que el objeto trae iata_aerolinea y numero_vuelo
+                $iata_aerolinea = $proFxAttLog->iata_aerolinea ?? null;
+                $numero_vuelo = $proFxAttLog->numero_vuelo ?? null;
 
-                // 1. Buscar la planificación correspondiente
-                /** @var Planificacion $planificacionDelDia */
-                $planificacionDelDia = Planificacion::where('id_tripulante', $id_tripulante)
-                                        ->where('fecha_vuelo', $fechaMarcacion)
-                                        ->first();
+                Log::info("Procesando marcación para Crew ID: {$crew_id} Aerolínea: {$iata_aerolinea} en Fecha: {$fechaMarcacion} Hora: {$horaMarcacion}");
 
-                if (!$planificacionDelDia) {
-                    Log::warning("No se encontró planificación para Tripulante ID: {$id_tripulante} en Fecha: {$fechaMarcacion}. Marcación ignorada.");
-                    continue; // Saltar esta marcación
+                if (!$iata_aerolinea || !$numero_vuelo) {
+                    Log::warning("Faltan datos de iata_aerolinea o numero_vuelo en el log. Marcación ignorada.");
+                    continue;
                 }
 
-                Log::info("Planificación encontrada ID: {$planificacionDelDia->id}, Hora Vuelo: {$planificacionDelDia->hora_vuelo}");
+                // 1. Buscar la planificación correspondiente
+                $planificacion = Planificacion::where('iata_aerolinea', $iata_aerolinea)
+                    ->where('crew_id', $crew_id)
+                    ->where('fecha_vuelo', $fechaMarcacion)
+                    ->where('numero_vuelo', $numero_vuelo)
+                    ->where('estatus', 'P')
+                    ->first();
 
-                // 2. Validar si se permite la marcación según la hora_vuelo
-                $horaVueloPlanificada = Carbon::parse($planificacionDelDia->fecha_vuelo . ' ' . $planificacionDelDia->hora_vuelo);
+                if (!$planificacion) {
+                    Log::warning("No se encontró planificación para Crew ID: {$crew_id}, Aerolínea: {$iata_aerolinea}, Fecha: {$fechaMarcacion}, Vuelo: {$numero_vuelo}. Marcación ignorada.");
+                    continue;
+                }
 
+                // 2. Buscar el tripulante
+                $tripulante = \App\Models\Tripulante::where('iata_aerolinea', $iata_aerolinea)
+                    ->where('crew_id', $crew_id)
+                    ->first();
+
+                if (!$tripulante) {
+                    Log::warning("No se encontró tripulante para Crew ID: {$crew_id}, Aerolínea: {$iata_aerolinea}. Marcación ignorada.");
+                    continue;
+                }
+
+                // 3. Validar si se permite la marcación según la hora_vuelo
+                $horaVueloPlanificada = Carbon::parse($planificacion->fecha_vuelo . ' ' . $planificacion->hora_vuelo);
                 $puedeMarcar = false;
                 if ($tiempoMarcacionCompleto->lessThanOrEqualTo($horaVueloPlanificada)) {
-                    // Marcó antes o justo a la hora del vuelo
                     $puedeMarcar = true;
                     Log::info("Marcación ANTES o EN la hora del vuelo. Permitida.");
                 } else {
-                    // Marcó después de la hora del vuelo
                     $diferenciaHoras = $tiempoMarcacionCompleto->diffInHours($horaVueloPlanificada);
                     if ($diferenciaHoras <= 2) {
                         $puedeMarcar = true;
@@ -59,23 +75,14 @@ class MarcacionesServices
                     continue; // Saltar esta marcación porque no cumple la regla de tiempo
                 }
 
-                // 3. Si se permite, guardar la marcación
-                $lugar_marcacion = substr($proFxAttLog->DEVICE_SN, 0, 10);
+                // 4. Cambiar el estatus de la planificación a 'R'
+                $planificacion->estatus = 'R';
+                $planificacion->save();
 
-                /** @var Marcacion $marcacion */
-                $marcacion = new Marcacion();
-                $marcacion->id_planificacion = $planificacionDelDia->id; // PK de la tabla planificacion
-                $marcacion->id_tripulante = $id_tripulante;
-                $marcacion->fecha_marcacion = $fechaMarcacion;
-                $marcacion->hora_marcacion = $horaMarcacion; // Esto guardará HH:MM:SS
-                $marcacion->lugar_marcacion = $lugar_marcacion;
-
-                $marcacion->save();
-
-                Log::info('Registro de marcacion exitoso: ' . $marcacion->toJson());
+                Log::info('Planificación actualizada a estatus R: ' . $planificacion->toJson());
 
             } catch (\Exception $e) {
-                Log::error("Error al registrar marcación para USER_PIN: {$proFxAttLog->USER_PIN} en {$proFxAttLog->VERIFY_TIME}. Error: {$e->getMessage()} - Stack: " . $e->getTraceAsString());
+                Log::error("Error al procesar marcación para Crew ID: {$crew_id} en {$proFxAttLog->VERIFY_TIME}. Error: {$e->getMessage()} - Stack: " . $e->getTraceAsString());
             }
         }
     }
