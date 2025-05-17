@@ -81,6 +81,16 @@ class MarcacionesServices
 
                 Log::info("Planificación ID: {$planificacion->id} actualizada a estatus 'R'");
 
+                // 5. Insertar en la tabla marcacion
+                $marcacion = new Marcacion();
+                $marcacion->id_planificacion = $planificacion->id;
+                $marcacion->crew_id = $tripulante->crew_id;
+                $marcacion->fecha_marcacion = $fechaMarcacion;
+                $marcacion->hora_marcacion = $horaMarcacion;
+                $marcacion->save();
+
+                Log::info("Marcación guardada con ID: {$marcacion->id_marcacion}");
+
             } catch (\Exception $e) {
                 Log::error("Error al procesar marcación para ID Tripulante: {$proFxAttLog->USER_PIN} en {$proFxAttLog->VERIFY_TIME}. Error: {$e->getMessage()} - Stack: " . $e->getTraceAsString());
             }
