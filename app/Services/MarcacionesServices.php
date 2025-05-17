@@ -5,7 +5,7 @@ namespace App\Services;
 use App\Models\Marcacion;
 use App\Models\Planificacion; // Asegúrate de importar tu modelo Planificacion
 use App\Models\ZKTeco\ProFaceX\ProFxAttLog;
-// use App\Models\ZKTeco\ProFaceX\ProFxDeviceInfo; // Solo si aún lo necesitas para algo más
+use App\Models\ZKTeco\ProFaceX\ProFxDeviceInfo; // Importamos el modelo ProFxDeviceInfo
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 
@@ -81,15 +81,33 @@ class MarcacionesServices
 
                 Log::info("Planificación ID: {$planificacion->id} actualizada a estatus 'R'");
 
-                // 5. Insertar en la tabla marcacion
+                // 5. Obtener información del dispositivo/lugar de marcación
+                $deviceId = $proFxAttLog->DEVICE_ID;
+                $lugarMarcacion = $deviceId; // Por defecto usamos el DEVICE_ID
+
+                // Intentar obtener más información del dispositivo
+                try {
+                    $deviceInfo = ProFxDeviceInfo::find($deviceId);
+                    if ($deviceInfo) {
+                        $lugarMarcacion = $deviceInfo->DEVICE_SN ?? $deviceInfo->LOCATION ?? $deviceId;
+                        Log::info("Información de dispositivo encontrada: {$lugarMarcacion}");
+                    } else {
+                        Log::info("No se encontró información adicional para el dispositivo ID: {$deviceId}");
+                    }
+                } catch (\Exception $e) {
+                    Log::warning("Error al buscar información del dispositivo: {$e->getMessage()}");
+                }
+
+                // 6. Insertar en la tabla marcacion
                 $marcacion = new Marcacion();
                 $marcacion->id_planificacion = $planificacion->id;
                 $marcacion->crew_id = $tripulante->crew_id;
                 $marcacion->fecha_marcacion = $fechaMarcacion;
                 $marcacion->hora_marcacion = $horaMarcacion;
+                $marcacion->lugar_marcacion = $lugarMarcacion; // Guardamos el lugar de marcación
                 $marcacion->save();
 
-                Log::info("Marcación guardada con ID: {$marcacion->id_marcacion}");
+                Log::info("Marcación guardada con ID: {$marcacion->id_marcacion}, Lugar: {$lugarMarcacion}");
 
             } catch (\Exception $e) {
                 Log::error("Error al procesar marcación para ID Tripulante: {$proFxAttLog->USER_PIN} en {$proFxAttLog->VERIFY_TIME}. Error: {$e->getMessage()} - Stack: " . $e->getTraceAsString());
