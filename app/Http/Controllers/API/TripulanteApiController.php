@@ -444,7 +444,6 @@ class TripulanteApiController extends Controller
      */
     private function simulateCommandExecution($command)
     {
-        // Por ahora devolvemos un resultado simulado positivo
         return [
             'status' => 'OK',
             'info' => "Simulación de ejecución exitosa para comando ID: {$command->DEV_CMD_ID}"
