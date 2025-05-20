@@ -54,7 +54,6 @@ class DownloadProcessController extends Controller
             /**Sets the command*/
             $response = response($sb, 200)->header('Content-Type', 'text/plain;charset=' . $encoding);
             Log::info("contact cmd and send list: " . count($tempList));
-            Log::info("cmd info:" . $sb);
 
             /**Update the command list*/
             ManagerFactory::getCommandManager()->updateDeviceCommand($tempList);
