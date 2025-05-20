@@ -154,6 +154,14 @@ class DataParseUtil
             }
         }
 
+        // Ensure USER_PIN is never null by providing a default if not set
+        // This will prevent SQL errors when attempting to insert
+        if (empty($info->USER_PIN)) {
+            Log::warning("USER_PIN missing or empty in user data, using default value");
+            // Using a timestamp-based prefix and a random number to make it unique
+            $info->USER_PIN = 'default_' . time() . '_' . mt_rand(1000, 9999);
+        }
+
         return $info;
     }
 
@@ -348,6 +356,12 @@ class DataParseUtil
             }
         }
 
+        // Ensure USER_PIN is not empty before querying the database
+        if (empty($info->USER_PIN)) {
+            Log::warning("USER_PIN missing or empty in user photo data, cannot proceed");
+            return null;
+        }
+
         /** Gets the user info */
         $userInfo = ManagerFactory::getUserInfoManager()->getUserInfoByPinAndSn($info->USER_PIN, $deviceSn);
         if (null === $userInfo) {
@@ -409,7 +423,9 @@ class DataParseUtil
         /** Gets all the field values */
         foreach ($fields as $string) {
             if (strpos($string, "PIN") === 0) {
-                $template->USER_ID = substr($string, strpos($string, "PIN=") + strlen("PIN="));
+                $template->USER_PIN = substr($string, strpos($string, "PIN=") + strlen("PIN="));
+                // Also set USER_ID for backward compatibility
+                $template->USER_ID = $template->USER_PIN;
             } elseif (strpos($string, "FID") === 0) {
                 try {
                     $templateNo = (int)substr($string, strpos($string, "FID=") + strlen("FID="));
@@ -442,6 +458,12 @@ class DataParseUtil
         $template->VERSION = Constants::BIO_VERSION_FACE_7; // Face algorithm version
         $template->TEMPLATE_NO_INDEX = 0;
         $template->DEVICE_SN = $deviceSn;
+
+        // Ensure USER_PIN is not empty before querying the database
+        if (empty($template->USER_PIN)) {
+            Log::warning("USER_PIN missing or empty in face data, cannot proceed");
+            return null;
+        }
 
         /** Gets the user info by user ID and device SN */
         $userInfo = ManagerFactory::getUserInfoManager()->getUserInfoByPinAndSn($template->USER_PIN, $template->DEVICE_SN);
