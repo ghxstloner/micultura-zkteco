@@ -93,7 +93,7 @@ class DataParseUtil
      */
     public static function parseUserData(string $data, string $deviceSn)
     {
-        Log::info("user data:\n" . $data);
+        Log::info("Procesando datos de usuario");
         $list = [];
         if (null !== $data && !empty($data)) {
             $userInfos = explode("\n", $data);
@@ -166,7 +166,7 @@ class DataParseUtil
      */
     public static function parseFingerPrint(string $data, string $deviceSn)
     {
-        Log::info("finger data:\n" . $data);
+        Log::info("Procesando datos de huella digital");
         $list = [];
         $fieldsStr = null;
         if (!empty($data)) {
@@ -375,7 +375,7 @@ class DataParseUtil
             return -1;
         }
 
-        Log::info("face data:\n" . $data);
+        Log::info("Procesando datos de reconocimiento facial");
         $list = [];
         $faces = explode("\n", $data);
         foreach ($faces as $string) {
@@ -543,7 +543,7 @@ class DataParseUtil
                         ->where('DEVICE_SN', $log->DEVICE_SN)
                         ->where('VERIFY_TYPE', $log->VERIFY_TYPE)->count() > 0) {
                     $result = 1;
-                    Log::info("Registro de marcacion duplicada: " . print_r($log->toArray(), true));
+                    Log::info("Registro de marcacion duplicada para usuario: {$log->USER_PIN} en tiempo: {$log->VERIFY_TIME}");
                     continue;
                 }
 

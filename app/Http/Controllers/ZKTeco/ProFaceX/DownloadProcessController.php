@@ -111,7 +111,7 @@ class DownloadProcessController extends Controller
                 }
             }
             $data = $bufferData;
-            Log::info('DEV CMD RETURN:\n' . $data);
+            Log::info('Recibida respuesta del dispositivo');
             Log::info('update cmd return begin');
             $ret = -1;
             if (str_contains($data, 'CMD=Shell')) {
