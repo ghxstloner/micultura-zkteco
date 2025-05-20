@@ -444,10 +444,6 @@ class TripulanteApiController extends Controller
      */
     private function simulateCommandExecution($command)
     {
-        // Aquí, en una implementación real, interactuarías con el SDK del dispositivo ZKTeco
-        // para enviar $command->CMD_CONTENT al dispositivo $command->DEVICE_SN.
-        Log::info("Simulando ejecución para comando ID: {$command->DEV_CMD_ID} - Contenido: {$command->CMD_CONTENT}");
-
         // Por ahora devolvemos un resultado simulado positivo
         return [
             'status' => 'OK',
