@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Marcacion;
 use App\Models\Planificacion;
+use App\Models\Tripulante;
 use App\Models\ZKTeco\ProFaceX\ProFxAttLog;
 use App\Models\ZKTeco\ProFaceX\ProFxDeviceInfo;
 use Illuminate\Support\Facades\Log;
@@ -11,68 +12,81 @@ use Carbon\Carbon;
 
 class MarcacionesServices
 {
-    /** @param ProFxAttLog[] $proFxAttLogList */
+    /**
+     * Registra marcaciones y las asocia con planificaciones según reglas específicas
+     *
+     * @param array $proFxAttLogList Lista de objetos ProFxAttLog a procesar
+     * @return void
+     */
     public function registrarMarcaciones(array $proFxAttLogList)
     {
         foreach ($proFxAttLogList as $proFxAttLog) {
             try {
-                $id_tripulante = intval($proFxAttLog->USER_PIN);
+                // Extracción y preparación de datos iniciales
+                $id_tripulante_from_pin = (int) $proFxAttLog->USER_PIN;
                 $tiempoMarcacionCompleto = Carbon::parse($proFxAttLog->VERIFY_TIME);
-                $fechaMarcacion = $tiempoMarcacionCompleto->toDateString();
-                $horaMarcacion = $tiempoMarcacionCompleto->toTimeString();
-                $id_planificacion = 0; // Por defecto sin planificación
-                $crew_id = null;
+                $fechaMarcacionActual = $tiempoMarcacionCompleto->format('Y-m-d');
+                $horaMarcacionActual = $tiempoMarcacionCompleto->format('H:i:s');
 
-                // 1. Buscar el tripulante
-                $tripulante = \App\Models\Tripulante::where('id_tripulante', $id_tripulante)->first();
+                // Valores por defecto
+                $id_planificacion_para_esta_marcacion = 0;
+                $crew_id_del_tripulante = null;
 
-                if ($tripulante && $tripulante->crew_id) {
-                    $crew_id = $tripulante->crew_id;
+                // Obtención de datos del tripulante
+                $tripulante = Tripulante::where('id_tripulante', $id_tripulante_from_pin)->first();
 
-                    // 2. Buscar si hay una planificación activa para la fecha actual
-                    if ($tripulante->iata_aerolinea) {
-                        // Buscar planificación con estatus P (pendiente) o R (realizada)
-                        $planificacion = Planificacion::where('crew_id', $tripulante->crew_id)
+                if ($tripulante && $tripulante->crew_id && $tripulante->iata_aerolinea) {
+                    $crew_id_del_tripulante = $tripulante->crew_id;
+
+                    // Verificar si ya existe una marcación previa con planificación asignada
+                    $marcacionPreviaConPlanificacion = Marcacion::where('id_tripulante', $id_tripulante_from_pin)
+                        ->where('fecha_marcacion', $fechaMarcacionActual)
+                        ->where('id_planificacion', '>', 0)
+                        ->exists();
+
+                    // Solo buscar y asignar planificación si NO existe marcación previa con planificación
+                    if (!$marcacionPreviaConPlanificacion) {
+                        // Buscar planificación pendiente
+                        $planificacionPendiente = Planificacion::where('crew_id', $crew_id_del_tripulante)
                             ->where('iata_aerolinea', $tripulante->iata_aerolinea)
-                            ->where('fecha_vuelo', $fechaMarcacion)
-                            ->whereIn('estatus', ['P', 'R'])
+                            ->where('fecha_vuelo', $fechaMarcacionActual)
+                            ->where('estatus', 'P')
                             ->first();
 
-                        if ($planificacion) {
-                            $id_planificacion = $planificacion->id;
-
-                            // Actualizar el estatus solo si está en 'P'
-                            if ($planificacion->estatus === 'P') {
-                                $planificacion->estatus = 'R';
-                                $planificacion->save();
-                            }
+                        if ($planificacionPendiente) {
+                            // Asignar planificación y cambiar estatus
+                            $id_planificacion_para_esta_marcacion = $planificacionPendiente->id;
+                            $planificacionPendiente->estatus = 'R';
+                            $planificacionPendiente->save();
                         }
                     }
                 }
 
-                // 3. Obtener lugar_marcacion
+                // Obtención del lugar de marcación
                 $deviceSn = $proFxAttLog->DEVICE_SN;
-                $lugarMarcacion = $deviceSn;
+                $lugarMarcacionDeterminado = $deviceSn; // Valor por defecto
 
                 $deviceInfo = ProFxDeviceInfo::where('DEVICE_SN', $deviceSn)->first();
-                if ($deviceInfo) {
-                    $lugarMarcacion = $deviceInfo->DEVICE_ID;
+                if ($deviceInfo && $deviceInfo->DEVICE_ID) {
+                    $lugarMarcacionDeterminado = $deviceInfo->DEVICE_ID;
                 }
 
-                // 4. SIEMPRE insertar una nueva marcación, sin excepciones
+                // Guardar la nueva marcación
                 $marcacion = new Marcacion();
-                $marcacion->id_planificacion = $id_planificacion;
-                $marcacion->crew_id = $crew_id;
-                $marcacion->id_tripulante = $id_tripulante;
-                $marcacion->fecha_marcacion = $fechaMarcacion;
-                $marcacion->hora_marcacion = $horaMarcacion;
-                $marcacion->lugar_marcacion = $lugarMarcacion;
+                $marcacion->id_planificacion = $id_planificacion_para_esta_marcacion;
+                $marcacion->id_tripulante = $id_tripulante_from_pin;
+                $marcacion->crew_id = $crew_id_del_tripulante;
+                $marcacion->fecha_marcacion = $fechaMarcacionActual;
+                $marcacion->hora_marcacion = $horaMarcacionActual;
+                $marcacion->lugar_marcacion = $lugarMarcacionDeterminado;
                 $marcacion->save();
 
             } catch (\Exception $e) {
-                Log::error("Error al procesar marcación: {$e->getMessage()}", [
+                Log::error("Error al procesar marcación para USER_PIN: {$proFxAttLog->USER_PIN}", [
+                    'mensaje' => $e->getMessage(),
                     'stacktrace' => $e->getTraceAsString()
                 ]);
+                continue; // Continuar con el siguiente registro
             }
         }
     }
