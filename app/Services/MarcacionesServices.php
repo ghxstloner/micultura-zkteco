@@ -65,6 +65,7 @@ class MarcacionesServices
                 $marcacion = new Marcacion();
                 $marcacion->id_planificacion = $id_planificacion; // Será 0 si no hay planificación válida
                 $marcacion->crew_id = $crew_id;
+                $marcacion->id_tripulante = $id_tripulante; // AÑADIDO: Guardamos el ID del tripulante
                 $marcacion->fecha_marcacion = $fechaMarcacion;
                 $marcacion->hora_marcacion = $horaMarcacion;
                 $marcacion->lugar_marcacion = $lugarMarcacion;
