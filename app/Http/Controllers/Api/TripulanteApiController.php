@@ -307,37 +307,34 @@ class TripulanteApiController extends Controller
             $commands = $commandManager->getDeviceCommandListToDevice($deviceSn);
 
             if ($commands->isEmpty()) {
+                Log::info("No hay comandos pendientes para el dispositivo SN: {$deviceSn}");
                 return;
             }
 
             foreach ($commands as $command) {
-                // Marcar comando como en proceso
+                Log::info("Ejecutando comando ID: {$command->DEV_CMD_ID} en dispositivo SN: {$deviceSn}");
                 $command->CMD_TRANS_TIMES = now();
                 $commandManager->updateDeviceCommand([$command]);
 
-                // Ejecutar el comando
                 $result = $this->simulateCommandExecution($command);
 
-                // Actualizar resultado
                 $command->CMD_RETURN = $result['status'];
                 $command->CMD_RETURN_INFO = $result['info'];
                 $command->CMD_OVER_TIME = now();
                 $commandManager->updateDeviceCommand([$command]);
+
+                Log::info("Comando ejecutado: {$command->DEV_CMD_ID} - Resultado: {$result['status']}");
             }
 
-            // Actualizar estado del dispositivo y solicitar INFO actualizada
             ManagerFactory::getDeviceManager()->updateDeviceState($deviceSn, 'Online', now());
             ManagerFactory::getCommandManager()->createINFOCommand($deviceSn);
         } catch (\Exception $e) {
-            // Mantenemos solo este log crítico para errores graves
-            Log::error("Error ejecutando comandos para dispositivo: {$e->getMessage()}");
+            Log::error("Error ejecutando comandos para dispositivo SN: {$deviceSn}. Error: {$e->getMessage()}");
         }
     }
 
     /**
      * Simular la ejecución de un comando en un dispositivo.
-     * Nota: En un entorno de producción, esto se conectaría realmente al dispositivo
-     * usando el SDK o API proporcionada por ZKTeco.
      *
      * @param object $command
      * @return array
@@ -346,7 +343,7 @@ class TripulanteApiController extends Controller
     {
         return [
             'status' => 'OK',
-            'info' => "Simulación exitosa"
+            'info' => "Simulación de ejecución para comando ID: {$command->DEV_CMD_ID}"
         ];
     }
 
