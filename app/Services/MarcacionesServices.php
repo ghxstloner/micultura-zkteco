@@ -20,7 +20,7 @@ class MarcacionesServices
                 $tiempoMarcacionCompleto = Carbon::parse($proFxAttLog->VERIFY_TIME);
                 $fechaMarcacion = $tiempoMarcacionCompleto->toDateString();
                 $horaMarcacion = $tiempoMarcacionCompleto->toTimeString();
-                $id_planificacion = 0;
+                $id_planificacion = 0; // Por defecto sin planificación
                 $crew_id = null;
 
                 // 1. Buscar el tripulante
@@ -29,33 +29,22 @@ class MarcacionesServices
                 if ($tripulante && $tripulante->crew_id) {
                     $crew_id = $tripulante->crew_id;
 
-                    // 2. Verificar si YA EXISTE una marcación para este tripulante en esta fecha
-                    $marcacionExistente = Marcacion::where('crew_id', $crew_id)
-                        ->where('fecha_marcacion', $fechaMarcacion)
-                        ->orderBy('id', 'desc')
-                        ->first();
+                    // 2. Buscar si hay una planificación activa para la fecha actual
+                    if ($tripulante->iata_aerolinea) {
+                        // Buscar planificación con estatus P (pendiente) o R (realizada)
+                        $planificacion = Planificacion::where('crew_id', $tripulante->crew_id)
+                            ->where('iata_aerolinea', $tripulante->iata_aerolinea)
+                            ->where('fecha_vuelo', $fechaMarcacion)
+                            ->whereIn('estatus', ['P', 'R'])
+                            ->first();
 
-                    if ($marcacionExistente && $marcacionExistente->id_planificacion > 0) {
-                        // Si ya existe una marcación con planificación asignada, reutilizar esa planificación
-                        $id_planificacion = $marcacionExistente->id_planificacion;
-                    } else {
-                        // No hay marcación previa con planificación válida, buscar una planificación
-                        if ($tripulante->iata_aerolinea) {
-                            // Buscar planificación con estatus P (pendiente) o R (realizada)
-                            $planificacion = Planificacion::where('crew_id', $tripulante->crew_id)
-                                ->where('iata_aerolinea', $tripulante->iata_aerolinea)
-                                ->where('fecha_vuelo', $fechaMarcacion)
-                                ->whereIn('estatus', ['P', 'R'])
-                                ->first();
+                        if ($planificacion) {
+                            $id_planificacion = $planificacion->id;
 
-                            if ($planificacion) {
-                                $id_planificacion = $planificacion->id;
-
-                                // Actualizar el estatus solo si está en 'P'
-                                if ($planificacion->estatus === 'P') {
-                                    $planificacion->estatus = 'R';
-                                    $planificacion->save();
-                                }
+                            // Actualizar el estatus solo si está en 'P'
+                            if ($planificacion->estatus === 'P') {
+                                $planificacion->estatus = 'R';
+                                $planificacion->save();
                             }
                         }
                     }
@@ -70,7 +59,7 @@ class MarcacionesServices
                     $lugarMarcacion = $deviceInfo->DEVICE_ID;
                 }
 
-                // 4. Insertar la marcación
+                // 4. SIEMPRE insertar una nueva marcación
                 $marcacion = new Marcacion();
                 $marcacion->id_planificacion = $id_planificacion;
                 $marcacion->crew_id = $crew_id;
