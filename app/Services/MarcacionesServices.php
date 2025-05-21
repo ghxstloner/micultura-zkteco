@@ -59,7 +59,7 @@ class MarcacionesServices
                     $lugarMarcacion = $deviceInfo->DEVICE_ID;
                 }
 
-                // 4. SIEMPRE insertar una nueva marcación
+                // 4. SIEMPRE insertar una nueva marcación, sin excepciones
                 $marcacion = new Marcacion();
                 $marcacion->id_planificacion = $id_planificacion;
                 $marcacion->crew_id = $crew_id;
@@ -70,7 +70,9 @@ class MarcacionesServices
                 $marcacion->save();
 
             } catch (\Exception $e) {
-                Log::error("Error al procesar marcación: {$e->getMessage()}");
+                Log::error("Error al procesar marcación: {$e->getMessage()}", [
+                    'stacktrace' => $e->getTraceAsString()
+                ]);
             }
         }
     }
