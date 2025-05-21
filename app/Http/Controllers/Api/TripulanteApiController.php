@@ -373,27 +373,51 @@ class TripulanteApiController extends Controller
      */
     private function compressImage($imageData, $quality = 75)
     {
-        // Crear una imagen desde los datos
+        // Ajustar a una calidad más baja para archivos grandes
         $image = imagecreatefromstring($imageData);
 
         if ($image === false) {
-            // Si no se puede crear la imagen, devolver los datos originales
             return $imageData;
         }
 
-        // Crear un buffer de salida para guardar la imagen comprimida
+        // Determinar tamaño original
+        $originalSize = strlen($imageData);
+        $targetQuality = 75; // Calidad predeterminada
+
+        // Reducir calidad proporcionalmente para imágenes más grandes
+        if ($originalSize > 500000) { // >500KB
+            $targetQuality = 30;
+        } elseif ($originalSize > 200000) { // >200KB
+            $targetQuality = 40;
+        } elseif ($originalSize > 100000) { // >100KB
+            $targetQuality = 50;
+        }
+
+        // También podemos redimensionar la imagen si es muy grande
+        $width = imagesx($image);
+        $height = imagesy($image);
+
+        if ($width > 800 || $height > 800) {
+            // Redimensionar manteniendo la proporción
+            if ($width > $height) {
+                $newWidth = 800;
+                $newHeight = ($height / $width) * 800;
+            } else {
+                $newHeight = 800;
+                $newWidth = ($width / $height) * 800;
+            }
+
+            $tempImage = imagecreatetruecolor($newWidth, $newHeight);
+            imagecopyresampled($tempImage, $image, 0, 0, 0, 0, $newWidth, $newHeight, $width, $height);
+            imagedestroy($image);
+            $image = $tempImage;
+        }
+
         ob_start();
-
-        // Comprimir y guardar la imagen en formato JPEG con la calidad especificada
-        imagejpeg($image, null, $quality);
-
-        // Obtener los datos comprimidos del buffer
+        imagejpeg($image, null, $targetQuality);
         $compressedData = ob_get_contents();
-
-        // Limpiar el buffer
         ob_end_clean();
 
-        // Liberar memoria
         imagedestroy($image);
 
         return $compressedData;
