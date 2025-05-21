@@ -62,6 +62,24 @@ return [
             ]) : [],
         ],
 
+        'profacex_db' => [
+            'driver' => 'mysql',
+            'host' => env('PROFACEX_DB_HOST', 'mc.amaxoniaerp.com'),
+            'port' => env('PROFACEX_DB_PORT', '3306'),
+            'database' => env('PROFACEX_DB_DATABASE', 'crew_manager'),
+            'username' => env('PROFACEX_DB_USERNAME', 'root'),
+            'password' => env('PROFACEX_DB_PASSWORD', 'WCiVTpnePVYIeKt2'),
+            'charset' => 'utf8mb4',
+            'collation' => 'utf8mb4_unicode_ci',
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'strict' => true,
+            'engine' => null,
+            'options' => extension_loaded('pdo_mysql') ? array_filter([
+                PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
+            ]) : [],
+        ],
+
         'mariadb' => [
             'driver' => 'mariadb',
             'url' => env('DB_URL'),

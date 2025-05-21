@@ -2,15 +2,20 @@
 
 namespace App\Models\ZKTeco\ProFaceX;
 
-use Illuminate\Database\Eloquent\Model;
-
-class ProFxUserInfo extends Model
+class ProFxUserInfo extends ProFxModel
 {
     /*
     |--------------------------------------------------------------------------
     | GLOBAL VARIABLES
     |--------------------------------------------------------------------------
     */
+
+    /**
+     * Conexión a la base de datos
+     *
+     * @var string
+     */
+    protected $connection = 'profacex_db';
 
     /**
      * The table associated with the model.

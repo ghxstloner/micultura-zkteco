@@ -5,11 +5,10 @@ namespace App\Models\ZKTeco\ProFaceX;
 //use App\Models\ExpedienteMarcacion;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 
 /** @property string $DEVICE_SN */
-class ProFxDeviceInfo extends Model
+class ProFxDeviceInfo extends ProFxModel
 {
     /*
     |--------------------------------------------------------------------------
