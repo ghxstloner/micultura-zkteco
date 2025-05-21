@@ -93,7 +93,7 @@ class DataParseUtil
      */
     public static function parseUserData(string $data, string $deviceSn)
     {
-        Log::info("Procesando datos de usuario");
+        Log::info("user data:\n" . $data);
         $list = [];
         if (null !== $data && !empty($data)) {
             $userInfos = explode("\n", $data);
@@ -101,6 +101,11 @@ class DataParseUtil
                 $fieldsStr = substr($string, strpos($string, "USER ") + strlen("USER "));
                 $fields = explode("\t", $fieldsStr);
                 $info = self::parseUser($fields);
+
+                if (count($info->toArray()) == 0) {
+                    continue;
+                }
+
                 $info->DEVICE_SN = $deviceSn;
 
                 $userInfo = ProFxUserInfo::where(['USER_PIN' => $info->USER_PIN, 'DEVICE_SN' => $info->DEVICE_SN])->first();
@@ -127,6 +132,9 @@ class DataParseUtil
     {
         $info = new ProFxUserInfo();
         foreach ($fields as $string) {
+            if (empty($string)) {
+                continue;
+            }
             if (strpos($string, "PIN") === 0) {
                 $info->USER_PIN = substr($string, strpos($string, "PIN=") + strlen("PIN="));
             } elseif (strpos($string, "Name") === 0) {
@@ -154,14 +162,6 @@ class DataParseUtil
             }
         }
 
-        // Ensure USER_PIN is never null by providing a default if not set
-        // This will prevent SQL errors when attempting to insert
-        if (empty($info->USER_PIN)) {
-            Log::warning("USER_PIN missing or empty in user data, using default value");
-            // Using a timestamp-based prefix and a random number to make it unique
-            $info->USER_PIN = 'default_' . time() . '_' . mt_rand(1000, 9999);
-        }
-
         return $info;
     }
 
@@ -174,7 +174,7 @@ class DataParseUtil
      */
     public static function parseFingerPrint(string $data, string $deviceSn)
     {
-        Log::info("Procesando datos de huella digital");
+        Log::info("finger data:\n" . $data);
         $list = [];
         $fieldsStr = null;
         if (!empty($data)) {
@@ -356,12 +356,6 @@ class DataParseUtil
             }
         }
 
-        // Ensure USER_PIN is not empty before querying the database
-        if (empty($info->USER_PIN)) {
-            Log::warning("USER_PIN missing or empty in user photo data, cannot proceed");
-            return null;
-        }
-
         /** Gets the user info */
         $userInfo = ManagerFactory::getUserInfoManager()->getUserInfoByPinAndSn($info->USER_PIN, $deviceSn);
         if (null === $userInfo) {
@@ -389,7 +383,7 @@ class DataParseUtil
             return -1;
         }
 
-        Log::info("Procesando datos de reconocimiento facial");
+        Log::info("face data:\n" . $data);
         $list = [];
         $faces = explode("\n", $data);
         foreach ($faces as $string) {
@@ -423,9 +417,7 @@ class DataParseUtil
         /** Gets all the field values */
         foreach ($fields as $string) {
             if (strpos($string, "PIN") === 0) {
-                $template->USER_PIN = substr($string, strpos($string, "PIN=") + strlen("PIN="));
-                // Also set USER_ID for backward compatibility
-                $template->USER_ID = $template->USER_PIN;
+                $template->USER_ID = substr($string, strpos($string, "PIN=") + strlen("PIN="));
             } elseif (strpos($string, "FID") === 0) {
                 try {
                     $templateNo = (int)substr($string, strpos($string, "FID=") + strlen("FID="));
@@ -458,12 +450,6 @@ class DataParseUtil
         $template->VERSION = Constants::BIO_VERSION_FACE_7; // Face algorithm version
         $template->TEMPLATE_NO_INDEX = 0;
         $template->DEVICE_SN = $deviceSn;
-
-        // Ensure USER_PIN is not empty before querying the database
-        if (empty($template->USER_PIN)) {
-            Log::warning("USER_PIN missing or empty in face data, cannot proceed");
-            return null;
-        }
 
         /** Gets the user info by user ID and device SN */
         $userInfo = ManagerFactory::getUserInfoManager()->getUserInfoByPinAndSn($template->USER_PIN, $template->DEVICE_SN);
@@ -565,7 +551,7 @@ class DataParseUtil
                         ->where('DEVICE_SN', $log->DEVICE_SN)
                         ->where('VERIFY_TYPE', $log->VERIFY_TYPE)->count() > 0) {
                     $result = 1;
-                    Log::info("Registro de marcacion duplicada para usuario: {$log->USER_PIN} en tiempo: {$log->VERIFY_TIME}");
+                    Log::info("Registro de marcacion duplicada: " . print_r($log->toArray(), true));
                     continue;
                 }
 

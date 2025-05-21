@@ -7,7 +7,6 @@ use App\Models\ZKTeco\ProFaceX\ProFxUserInfo;
 use App\Services\ZKTeco\ProFaceX\Constants;
 use App\Services\ZKTeco\ProFaceX\DevCmdUtil;
 use App\Services\ZKTeco\ProFaceX\PushUtil;
-use Illuminate\Support\Facades\Log;
 
 class DeviceCommandManager
 {
@@ -70,60 +69,28 @@ class DeviceCommandManager
      */
     public static function createUpdateUserInfosCommandByIds(ProFxUserInfo $userInfo, string $DEV_FUNS): int
     {
-        // Log inicial con datos del usuario
-        Log::info("Iniciando createUpdateUserInfosCommandByIds para USER_PIN: {$userInfo->USER_PIN}, DEVICE_SN: {$userInfo->DEVICE_SN}");
-
         // Verificar las funciones que soporta el dispositivo
         $isSupportUserPic = PushUtil::isDevFun($DEV_FUNS, Constants::DEV_FUNS['USERPIC']);
         $isSupportBioPhoto = PushUtil::isDevFun($DEV_FUNS, Constants::DEV_FUNS['BIOPHOTO']);
 
-        // Log de capacidades del dispositivo
-        Log::info("Capacidades del dispositivo {$userInfo->DEVICE_SN}: USERPIC=" . ($isSupportUserPic ? 'SI' : 'NO') .
-                ", BIOPHOTO=" . ($isSupportBioPhoto ? 'SI' : 'NO'));
-
-        // Log de información de la foto
-        if ($userInfo->PHOTO_ID_NAME) {
-            Log::info("Información de foto para USER_PIN {$userInfo->USER_PIN}: PHOTO_ID_NAME={$userInfo->PHOTO_ID_NAME}, PHOTO_ID_SIZE={$userInfo->PHOTO_ID_SIZE}");
-        } else {
-            Log::info("Usuario {$userInfo->USER_PIN} no tiene foto configurada");
-        }
-
         try {
             $comandos = [];
-
             // Crear el comando de actualización de la información del usuario
-            Log::info("Creando comando UPDATE USERINFO para USER_PIN: {$userInfo->USER_PIN}");
-            $comandos[] = DevCmdUtil::getUpdateUserCommand($userInfo, $userInfo->DEVICE_SN);
-
+            $comandos [] = DevCmdUtil::getUpdateUserCommand($userInfo, $userInfo->DEVICE_SN);
             // Crear el comando de actualización de la foto del usuario
             if ($isSupportUserPic && null !== $userInfo->PHOTO_ID_NAME && !empty($userInfo->PHOTO_ID_NAME)) {
-                Log::info("Creando comando UPDATE USERPIC para USER_PIN: {$userInfo->USER_PIN}, tamaño foto: {$userInfo->PHOTO_ID_SIZE}");
-                $comandos[] = DevCmdUtil::getUpdateUserPicCommand($userInfo, $userInfo->DEVICE_SN);
-            } else {
-                Log::info("No se crea comando USERPIC: " .
-                        "Soporte USERPIC=" . ($isSupportUserPic ? 'SI' : 'NO') .
-                        ", PHOTO_ID_NAME=" . ($userInfo->PHOTO_ID_NAME ? $userInfo->PHOTO_ID_NAME : 'NULL'));
+                $comandos [] = DevCmdUtil::getUpdateUserPicCommand($userInfo, $userInfo->DEVICE_SN);
             }
-
             // Crear el comando de actualización de la foto biométrica del usuario
             if ($isSupportBioPhoto && null !== $userInfo->PHOTO_ID_NAME && !empty($userInfo->PHOTO_ID_NAME)) {
-                Log::info("Creando comando UPDATE BIOPHOTO para USER_PIN: {$userInfo->USER_PIN}, tamaño foto: {$userInfo->PHOTO_ID_SIZE}");
-                $comandos[] = DevCmdUtil::getUpdateBioPhotoCommand($userInfo, $userInfo->DEVICE_SN);
-            } else {
-                Log::info("No se crea comando BIOPHOTO: " .
-                        "Soporte BIOPHOTO=" . ($isSupportBioPhoto ? 'SI' : 'NO') .
-                        ", PHOTO_ID_NAME=" . ($userInfo->PHOTO_ID_NAME ? $userInfo->PHOTO_ID_NAME : 'NULL'));
+                $comandos [] = DevCmdUtil::getUpdateBioPhotoCommand($userInfo, $userInfo->DEVICE_SN);
             }
 
-            Log::info("Total comandos creados para USER_PIN {$userInfo->USER_PIN}: " . count($comandos));
             ManagerFactory::getCommandManager()->updateDeviceCommand($comandos);
         } catch (\Exception $e) {
-            Log::error("Error en createUpdateUserInfosCommandByIds para USER_PIN {$userInfo->USER_PIN}: {$e->getMessage()}");
-            Log::error("Trace: {$e->getTraceAsString()}");
             return 1;
         }
 
-        Log::info("Finalizado createUpdateUserInfosCommandByIds para USER_PIN: {$userInfo->USER_PIN}");
         return 0;
     }
 

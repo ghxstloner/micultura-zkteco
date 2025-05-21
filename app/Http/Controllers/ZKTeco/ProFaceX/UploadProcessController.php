@@ -218,7 +218,7 @@ class UploadProcessController extends Controller
             Log::info("begin parse op attlog");
             $response = DataParseUtil::parseAttlog($data, $deviceSn);
             if ($response === 1) {
-                return 0;
+                return 1;
             }
 
             Log::info("end parse op attlog");
