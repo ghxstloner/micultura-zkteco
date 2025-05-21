@@ -64,7 +64,7 @@ return [
 
         'profacex_db' => [
             'driver' => 'mysql',
-            'host' => env('PROFACEX_DB_HOST', 'mc.amaxoniaerp.com'),
+            'host' => env('PROFACEX_DB_HOST', 'localhost'),
             'port' => env('PROFACEX_DB_PORT', '3306'),
             'database' => env('PROFACEX_DB_DATABASE', 'crew_manager'),
             'username' => env('PROFACEX_DB_USERNAME', 'root'),

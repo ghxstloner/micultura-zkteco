@@ -11,13 +11,6 @@ class ProFxUserInfo extends ProFxModel
     */
 
     /**
-     * Conexión a la base de datos
-     *
-     * @var string
-     */
-    protected $connection = 'profacex_db';
-
-    /**
      * The table associated with the model.
      *
      * @var string
