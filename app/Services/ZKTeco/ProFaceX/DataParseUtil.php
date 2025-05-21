@@ -16,7 +16,8 @@ class DataParseUtil
 {
     public static function getDateTimeInGMTFormat(): string
     {
-        $dt = Carbon::now();
+        $dt = Carbon::now()->format('Y-m-d H:i:s');
+        $dt = Carbon::parse($dt);
         $dt->setTimezone('GMT');
         return $dt->format('D, d M Y H:i:s T');
     }

@@ -3,6 +3,7 @@
 namespace App\Models\ZKTeco\ProFaceX;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 class ProFxDeviceCommand extends Model
 {
@@ -61,6 +62,29 @@ class ProFxDeviceCommand extends Model
     | FUNCTIONS
     |--------------------------------------------------------------------------
     */
+
+    /**
+     * The "booted" method of the model.
+     *
+     * @return void
+     */
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::saving(function ($model) {
+            // Format dates without milliseconds
+            if (!empty($model->CMD_COMMIT_TIMES)) {
+                $model->CMD_COMMIT_TIMES = Carbon::parse($model->CMD_COMMIT_TIMES)->format('Y-m-d H:i:s');
+            }
+            if (!empty($model->CMD_TRANS_TIMES)) {
+                $model->CMD_TRANS_TIMES = Carbon::parse($model->CMD_TRANS_TIMES)->format('Y-m-d H:i:s');
+            }
+            if (!empty($model->CMD_OVER_TIME)) {
+                $model->CMD_OVER_TIME = Carbon::parse($model->CMD_OVER_TIME)->format('Y-m-d H:i:s');
+            }
+        });
+    }
 
     /*
     |--------------------------------------------------------------------------
