@@ -31,12 +31,12 @@ class DownloadProcessController extends Controller
         /**Define the character encoding type by the current language*/
         $encoding = 'UTF-8';
 
-        Log::info("get request and begin get cmd list.{$request->ip()}; {$request->fullUrl()}");
+
 
         /**Gets the command list by device SN*/
         $list = ManagerFactory::getCommandManager()->getDeviceCommandListToDevice($devSn);
 
-        Log::info("get cmd list over and begin contact: " . $list->count());
+
 
         /**save the logs of commands*/
         $tempList = [];
@@ -48,7 +48,7 @@ class DownloadProcessController extends Controller
                 $content .= $command->DEV_CMD_ID . ":";
                 $content .= $command->CMD_CONTENT . "\n";
                 /**the command should be less than setting, default 64K*/
-                Log::info("SN:" . $devSn);
+
 
                 $sb .= $content;
 
@@ -58,8 +58,8 @@ class DownloadProcessController extends Controller
             }
             /**Sets the command*/
             $response = response($sb, 200)->header('Content-Type', 'text/plain;charset=' . $encoding);
-            Log::info("contact cmd and send list: " . count($tempList));
-            Log::info("cmd info:" . $sb);
+
+
 
             /**Update the command list*/
             ManagerFactory::getCommandManager()->updateDeviceCommand($tempList);
@@ -69,7 +69,7 @@ class DownloadProcessController extends Controller
 
         /**Update device INFO*/
         if ($info) {
-            Log::info("INFO:" . $info);
+
             $this->updateDeviceInfo($info, $devSn);
         } else {
             ManagerFactory::getDeviceManager()->updateDeviceState($devSn, "connecting", Carbon::now()->format('Y-m-d H:i:s'));
@@ -83,10 +83,7 @@ class DownloadProcessController extends Controller
         $response = new Response();
         $response->header('Content-Type', 'text/plain');
         $deviceSn = $request->input('SN');
-        Log::info('get request and begin process cmd return. '
-            . $request->ip() . ';'
-            . $request->url() . '?' . http_build_query($request->query()));
-        Log::info('content-length:' . $request->header('Content-Length'));
+
 
         try {
             $bufferData = '';
@@ -116,15 +113,15 @@ class DownloadProcessController extends Controller
                 }
             }
             $data = $bufferData;
-            Log::info('DEV CMD RETURN:\n' . $data);
-            Log::info('update cmd return begin');
+
+
             $ret = -1;
             if (str_contains($data, 'CMD=Shell')) {
                 $ret = $this->processShellReturn($data);
             } else {
                 $ret = $this->updateDeviceCommand($data, $response);
             }
-            Log::info('update cmd return end');
+
             ManagerFactory::getDeviceManager()->updateDeviceState($deviceSn, "connecting", Carbon::now()->format('Y-m-d H:i:s'));
 
             if (0 == $ret) {

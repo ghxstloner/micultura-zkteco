@@ -307,12 +307,12 @@ class TripulanteApiController extends Controller
             $commands = $commandManager->getDeviceCommandListToDevice($deviceSn);
 
             if ($commands->isEmpty()) {
-                Log::info("No hay comandos pendientes para el dispositivo SN: {$deviceSn}");
+
                 return;
             }
 
             foreach ($commands as $command) {
-                Log::info("Ejecutando comando ID: {$command->DEV_CMD_ID} en dispositivo SN: {$deviceSn}");
+
                 $command->CMD_TRANS_TIMES = now();
                 $commandManager->updateDeviceCommand([$command]);
 
@@ -323,7 +323,7 @@ class TripulanteApiController extends Controller
                 $command->CMD_OVER_TIME = now();
                 $commandManager->updateDeviceCommand([$command]);
 
-                Log::info("Comando ejecutado: {$command->DEV_CMD_ID} - Resultado: {$result['status']}");
+
             }
 
             ManagerFactory::getDeviceManager()->updateDeviceState($deviceSn, 'Online', now());

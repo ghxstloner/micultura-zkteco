@@ -26,10 +26,10 @@ class UploadProcessController extends Controller
         $table = $request->query('table');
         $userPin = $request->query('PIN');
 
-        Log::info("get request and make the device options : {$request->ip()} ; {$request->fullUrl()}");
+
 
         if (empty($deviceSn)) {
-            Log::info('device is null or empty');
+
             return response('error')->header('Content-Type', 'text/plain')->header('Date', $dateTime);
         }
 
@@ -41,26 +41,26 @@ class UploadProcessController extends Controller
                 $devInfo = $this->getDeviceInfo($deviceSn, $request);
                 if (!is_null($devInfo)) {
                     $deviceOptions = $this->getDeviceOptions($devInfo);
-                    Log::info($deviceOptions);
+
                     return response($deviceOptions)->header('Content-Type', 'text/plain')->header('Date', $dateTime)->header('charset', $charset);
                 } else {
-                    Log::info('option=all device is null');
+
                     return response('error')->header('Content-Type', 'text/plain')->header('Date', $dateTime);
                 }
             } elseif ($table === 'RemoteAtt') {
                 if (is_null($userPin) || empty($userPin)) {
-                    Log::info('remoteatt userpin is null or empty');
+
                     return response('error')->header('Content-Type', 'text/plain')->header('Date', $dateTime);
                 }
 
                 if ($this->processRemoteAtt($userPin, $deviceSn, $lang) === 0) {
                     return response(null)->header('Content-Type', 'text/plain')->header('Date', $dateTime);
                 } else {
-                    Log::info('process remote att failed');
+
                     return response('error')->header('Content-Type', 'text/plain')->header('Date', $dateTime);
                 }
             } else {
-                Log::info('device request not existing');
+
                 return response('error')->header('Content-Type', 'text/plain')->header('Date', $dateTime);
             }
         } catch (\Exception $e) {
@@ -175,53 +175,53 @@ class UploadProcessController extends Controller
         if ("OPERLOG" === $table) {
             if (strpos($data, "OPLOG ") === 0) {
                 try {
-                    Log::info("begin parse op log");
+
                     $result = DataParseUtil::parseOPLog($data, $deviceSn);
-                    Log::info("end parse op log");
+
                     return $result;
                 } catch (\Exception $e) {
                     return -1;
                 }
             } elseif (strpos($data, "USER ") === 0) {
-                Log::info("begin parse op user");
+
                 DataParseUtil::parseUserData($data, $deviceSn);
-                Log::info("end parse op user");
+
                 return 0;
             } elseif (strpos($data, "FP ") === 0) {
-                Log::info("begin parse op fp");
+
                 DataParseUtil::parseFingerPrint($data, $deviceSn);
-                Log::info("end parse op fp");
+
                 return 0;
             } elseif (strpos($data, "USERPIC ") === 0) {
-                Log::info("begin parse op user pic");
+
                 DataParseUtil::parseUserPic($data, $deviceSn);
-                Log::info("end parse op user pic");
+
                 return 0;
             } elseif (strpos($data, "FACE ") === 0) {
-                Log::info("begin parse op face");
+
                 DataParseUtil::parseFace($data, $deviceSn);
-                Log::info("end parse op face");
+
                 return 0;
             } elseif (strpos($data, "BIOPHOTO ") === 0) {
-                Log::info("begin parse biophoto");
+
                 // DataParseUtil::parseBioPhoto();
                 // ...
                 // ...
-                Log::info("end parse biophoto");
+
             }
         } elseif ("BIODATA" === $table) {
-            Log::info("begin parse op fp");
+
             DataParseUtil::parseFingerPrint($data, $deviceSn);
-            Log::info("end parse op fp");
+
             return 0;
         } elseif ("ATTLOG" === $table) {
-            Log::info("begin parse op attlog");
+
             $response = DataParseUtil::parseAttlog($data, $deviceSn);
             if ($response === 1) {
                 return 1;
             }
 
-            Log::info("end parse op attlog");
+
             return 0;
         }
 
