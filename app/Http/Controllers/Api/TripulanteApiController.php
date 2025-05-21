@@ -50,8 +50,12 @@ class TripulanteApiController extends Controller
             if ($request->hasFile('foto')) {
                 $foto = $request->file('foto');
                 $fotoContent = file_get_contents($foto->getRealPath());
-                $fotoBase64 = base64_encode($fotoContent);
-                $fotoSize = $foto->getSize();
+
+                // Comprimir la imagen antes de convertirla a base64
+                $compressedImage = $this->compressImage($fotoContent);
+
+                $fotoBase64 = base64_encode($compressedImage);
+                $fotoSize = strlen($compressedImage);
                 $fotoNombreParaDispositivo = $request->id_tripulante . ".jpg";
             }
 
@@ -222,8 +226,11 @@ class TripulanteApiController extends Controller
                             throw new \Exception("El contenido obtenido no es una imagen válida");
                         }
 
-                        $fotoBase64 = base64_encode($fotoContent);
-                        $fotoSize = strlen($fotoContent);
+                        // Comprimir la imagen antes de convertirla a base64
+                        $compressedImage = $this->compressImage($fotoContent);
+
+                        $fotoBase64 = base64_encode($compressedImage);
+                        $fotoSize = strlen($compressedImage);
                         $fotoNombreParaDispositivo = $tripulante->id_tripulante . ".jpg";
 
                         // Buscar o crear el userInfo en el dispositivo destino
@@ -345,6 +352,41 @@ class TripulanteApiController extends Controller
             'status' => 'OK',
             'info' => "Simulación de ejecución para comando ID: {$command->DEV_CMD_ID}"
         ];
+    }
+
+    /**
+     * Comprime una imagen antes de convertirla a base64.
+     *
+     * @param string $imageData Los datos binarios de la imagen
+     * @param int $quality La calidad de compresión (0-100)
+     * @return string Los datos binarios de la imagen comprimida
+     */
+    private function compressImage($imageData, $quality = 75)
+    {
+        // Crear una imagen desde los datos
+        $image = imagecreatefromstring($imageData);
+
+        if ($image === false) {
+            // Si no se puede crear la imagen, devolver los datos originales
+            return $imageData;
+        }
+
+        // Crear un buffer de salida para guardar la imagen comprimida
+        ob_start();
+
+        // Comprimir y guardar la imagen en formato JPEG con la calidad especificada
+        imagejpeg($image, null, $quality);
+
+        // Obtener los datos comprimidos del buffer
+        $compressedData = ob_get_contents();
+
+        // Limpiar el buffer
+        ob_end_clean();
+
+        // Liberar memoria
+        imagedestroy($image);
+
+        return $compressedData;
     }
 
     /**
