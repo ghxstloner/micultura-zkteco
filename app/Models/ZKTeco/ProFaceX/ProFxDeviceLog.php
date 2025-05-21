@@ -2,9 +2,7 @@
 
 namespace App\Models\ZKTeco\ProFaceX;
 
-use Illuminate\Database\Eloquent\Model;
-
-class ProFxDeviceLog extends Model
+class ProFxDeviceLog extends ProFxModel
 {
     /*
     |--------------------------------------------------------------------------

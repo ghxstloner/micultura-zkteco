@@ -2,9 +2,7 @@
 
 namespace App\Models\ZKTeco\ProFaceX;
 
-use Illuminate\Database\Eloquent\Model;
-
-class ProFxPersBioTemplate extends Model
+class ProFxPersBioTemplate extends ProFxModel
 {
     /*
     |--------------------------------------------------------------------------
