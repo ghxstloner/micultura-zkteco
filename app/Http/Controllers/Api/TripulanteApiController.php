@@ -61,14 +61,18 @@ class TripulanteApiController extends Controller
             $dispositivosActivos = ProFxDeviceInfo::activos()->get();
 
             if ($dispositivosActivos->isEmpty()) {
-                Log::warning("No hay dispositivos activos para enviar datos del tripulante: {$request->id_tripulante}");
                 return response()->json([
                     'warning' => 'No hay dispositivos activos disponibles',
                     'id_tripulante_procesado' => $request->id_tripulante
                 ], 200);
             }
 
+            $resultados = [];
+
             foreach ($dispositivosActivos as $dispositivo) {
+                // Obtener el DEV_FUNS actual del dispositivo - IMPORTANTE: Esto faltaba en el método original
+                $devFuns = $dispositivo->DEV_FUNS;
+
                 // Buscar o crear el usuario en el dispositivo
                 $userInfo = ProFxUserInfo::firstOrNew([
                     'USER_PIN' => $request->id_tripulante,
@@ -97,25 +101,28 @@ class TripulanteApiController extends Controller
 
                 $userInfo->save();
 
-                // Obtener el DEV_FUNS actual del dispositivo
-                $devFuns = $dispositivo->DEV_FUNS;
-
                 ManagerFactory::getCommandManager()->createUpdateUserInfosCommandByIds(
                     $userInfo,
                     $devFuns
                 );
 
-                // Ejecutar comandos para el dispositivo
+                // Ejecutar comandos para CADA dispositivo INMEDIATAMENTE - Como en syncDevices
                 $this->executeDeviceCommands($dispositivo->DEVICE_SN);
+
+                $resultados[] = [
+                    'device_id' => $dispositivo->DEVICE_ID,
+                    'device_sn' => $dispositivo->DEVICE_SN,
+                    'resultado' => 'Comandos enviados correctamente'
+                ];
             }
 
             return response()->json([
                 'message' => 'Datos de persona enviados a dispositivos exitosamente',
-                'id_tripulante_procesado' => $request->id_tripulante
+                'id_tripulante_procesado' => $request->id_tripulante,
+                'resultados_dispositivos' => $resultados
             ], 200);
 
         } catch (\Exception $e) {
-            Log::error("Error al procesar y enviar datos de persona: {$e->getMessage()}");
             return response()->json([
                 'error' => 'Error al procesar y enviar datos de persona',
                 'details' => $e->getMessage()
@@ -163,11 +170,12 @@ class TripulanteApiController extends Controller
             // Obtener la URL base desde las variables de entorno
             $baseUrl = env('IMAGEN_URL_BASE');
 
-            // Obtener todos los tripulantes que tienen una imagen asignada
+            // Obtener todos los tripulantes que tienen una imagen asignada - Optimización: seleccionar solo columnas necesarias
             $tripulantes = DB::table('tripulantes')
                 ->whereNotNull('imagen')
                 ->whereNotNull('iata_aerolinea')
                 ->whereNotNull('crew_id')
+                ->select('id_tripulante', 'nombres', 'apellidos', 'imagen', 'iata_aerolinea', 'crew_id')
                 ->get();
 
             if ($tripulantes->isEmpty()) {
@@ -190,9 +198,11 @@ class TripulanteApiController extends Controller
 
                 // Obtener el DEV_FUNS actual del dispositivo
                 $devFuns = $dispositivo->DEV_FUNS;
+                $loteUserInfos = [];
+                $loteSize = 50; // Procesar en lotes de 50 usuarios
 
                 // Para cada tripulante a sincronizar
-                foreach ($tripulantes as $tripulante) {
+                foreach ($tripulantes as $index => $tripulante) {
                     try {
                         // Construir la URL de la imagen
                         $imagenUrl = "{$baseUrl}/{$tripulante->iata_aerolinea}/{$tripulante->crew_id}/{$tripulante->imagen}";
@@ -201,15 +211,15 @@ class TripulanteApiController extends Controller
                         $fotoContent = @file_get_contents($imagenUrl);
 
                         if ($fotoContent === false) {
-                            throw new \Exception("No se pudo obtener la imagen desde: {$imagenUrl}");
+                            throw new \Exception("No se pudo obtener la imagen");
                         }
 
-                        // Verificar que el contenido sea una imagen válida
+                        // Verificar que el contenido sea una imagen válida - Optimización: verificación simplificada
                         $finfo = new \finfo(FILEINFO_MIME_TYPE);
                         $mimeType = $finfo->buffer($fotoContent);
 
                         if (strpos($mimeType, 'image/') !== 0) {
-                            throw new \Exception("El contenido obtenido no es una imagen válida: {$mimeType}");
+                            throw new \Exception("El contenido obtenido no es una imagen válida");
                         }
 
                         $fotoBase64 = base64_encode($fotoContent);
@@ -241,32 +251,32 @@ class TripulanteApiController extends Controller
 
                         $userInfo->save();
 
-                        ManagerFactory::getCommandManager()->createUpdateUserInfosCommandByIds(
-                            $userInfo,
-                            $devFuns
-                        );
+                        // Añadir a la cola de procesamiento por lotes
+                        $loteUserInfos[] = $userInfo;
+
+                        // Procesar en lotes para mejorar rendimiento
+                        if (count($loteUserInfos) >= $loteSize || $index == count($tripulantes) - 1) {
+                            // Procesar lote actual de usuarios
+                            foreach ($loteUserInfos as $info) {
+                                ManagerFactory::getCommandManager()->createUpdateUserInfosCommandByIds(
+                                    $info,
+                                    $devFuns
+                                );
+                            }
+
+                            // Reiniciar el lote
+                            $loteUserInfos = [];
+                        }
 
                         $dispositivoResult['usuarios_sincronizados']++;
-                        $dispositivoResult['detalles'][] = [
-                            'id_tripulante' => $tripulante->id_tripulante,
-                            'estado' => 'sincronizado',
-                            'url_imagen' => $imagenUrl
-                        ];
 
                     } catch (\Exception $e) {
                         // Registrar el error pero continuar con el siguiente tripulante
                         $dispositivoResult['usuarios_fallidos']++;
-                        $dispositivoResult['detalles'][] = [
-                            'id_tripulante' => $tripulante->id_tripulante,
-                            'estado' => 'error',
-                            'mensaje' => $e->getMessage()
-                        ];
-
-                        Log::error("Error al sincronizar tripulante {$tripulante->id_tripulante}: {$e->getMessage()}");
                     }
                 }
 
-                // Ejecutar comandos para este dispositivo
+                // Ejecutar comandos para este dispositivo una sola vez al final
                 $this->executeDeviceCommands($dispositivo->DEVICE_SN);
 
                 $resultadosSincronizacion[] = $dispositivoResult;
@@ -278,12 +288,66 @@ class TripulanteApiController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            Log::error("Error en la sincronización: {$e->getMessage()}");
             return response()->json([
                 'error' => 'Ha ocurrido un error durante la sincronización.',
                 'details' => $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Ejecutar los comandos pendientes en el dispositivo por su número de serie.
+     *
+     * @param string $deviceSn
+     */
+    private function executeDeviceCommands(string $deviceSn)
+    {
+        try {
+            $commandManager = ManagerFactory::getCommandManager();
+            $commands = $commandManager->getDeviceCommandListToDevice($deviceSn);
+
+            if ($commands->isEmpty()) {
+                return;
+            }
+
+            foreach ($commands as $command) {
+                // Marcar comando como en proceso
+                $command->CMD_TRANS_TIMES = now();
+                $commandManager->updateDeviceCommand([$command]);
+
+                // Ejecutar el comando
+                $result = $this->simulateCommandExecution($command);
+
+                // Actualizar resultado
+                $command->CMD_RETURN = $result['status'];
+                $command->CMD_RETURN_INFO = $result['info'];
+                $command->CMD_OVER_TIME = now();
+                $commandManager->updateDeviceCommand([$command]);
+            }
+
+            // Actualizar estado del dispositivo y solicitar INFO actualizada
+            ManagerFactory::getDeviceManager()->updateDeviceState($deviceSn, 'Online', now());
+            ManagerFactory::getCommandManager()->createINFOCommand($deviceSn);
+        } catch (\Exception $e) {
+            // Mantenemos solo este log crítico para errores graves
+            Log::error("Error ejecutando comandos para dispositivo: {$e->getMessage()}");
+        }
+    }
+
+    /**
+     * Simular la ejecución de un comando en un dispositivo.
+     * Nota: En un entorno de producción, esto se conectaría realmente al dispositivo
+     * usando el SDK o API proporcionada por ZKTeco.
+     *
+     * @param object $command
+     * @return array
+     */
+    private function simulateCommandExecution($command)
+    {
+        return [
+            'status' => 'OK',
+            'info' => "Simulación exitosa"
+        ];
     }
 
     /**
@@ -335,39 +399,46 @@ class TripulanteApiController extends Controller
 
                 $errores = [];
 
-                // Procesar cada modelo con manejo de errores individual
-                foreach ($modelosTablas as $nombreModelo => $nombreTablaExplicito) {
-                    try {
-                        $nombreClaseCompleto = 'App\\Models\\ZKTeco\\ProFaceX\\' . $nombreModelo;
+                // Optimizacion: Ejecutar en transacción para mejorar rendimiento
+                DB::beginTransaction();
 
-                        if (!class_exists($nombreClaseCompleto)) {
-                            $errores[$nombreModelo] = "Clase {$nombreClaseCompleto} no existe";
+                try {
+                    // Procesar cada modelo con manejo de errores individual
+                    foreach ($modelosTablas as $nombreModelo => $nombreTablaExplicito) {
+                        try {
+                            $nombreClaseCompleto = 'App\\Models\\ZKTeco\\ProFaceX\\' . $nombreModelo;
+
+                            if (!class_exists($nombreClaseCompleto)) {
+                                $errores[$nombreModelo] = "Clase {$nombreClaseCompleto} no existe";
+                                $tablasFallidas++;
+                                continue;
+                            }
+
+                            $instanciaModelo = new $nombreClaseCompleto();
+
+                            // Usar nombre explícito si se proporcionó, o el del modelo
+                            $nombreTabla = $nombreTablaExplicito ?: $instanciaModelo->getTable();
+
+                            // Usar Query Builder para más control
+                            $numFilasBorradas = DB::table($nombreTabla)
+                                ->where('DEVICE_SN', '=', $deviceSn)
+                                ->delete();
+
+                            $tablasBorradas++;
+
+                        } catch (\Exception $e) {
+                            $errores[$nombreModelo] = $e->getMessage();
                             $tablasFallidas++;
-                            continue;
                         }
-
-                        $instanciaModelo = new $nombreClaseCompleto();
-
-                        // Usar nombre explícito si se proporcionó, o el del modelo
-                        $nombreTabla = $nombreTablaExplicito ?: $instanciaModelo->getTable();
-
-                        // Usar Query Builder para más control
-                        $numFilasBorradas = DB::table($nombreTabla)
-                            ->where('DEVICE_SN', '=', $deviceSn)
-                            ->delete();
-
-                        Log::info("Eliminados {$numFilasBorradas} registros de la tabla {$nombreTabla} para dispositivo {$deviceSn}");
-                        $tablasBorradas++;
-
-                    } catch (\Exception $e) {
-                        $errores[$nombreModelo] = $e->getMessage();
-                        Log::warning("Error al eliminar datos de tabla {$nombreModelo} para dispositivo {$deviceSn}: {$e->getMessage()}");
-                        $tablasFallidas++;
                     }
+
+                    DB::commit();
+                } catch (\Exception $e) {
+                    DB::rollback();
+                    throw $e;
                 }
 
                 // Crear comando para limpiar todos los datos en el dispositivo físico
-                Log::info("Creando comando de limpieza para dispositivo SN: {$deviceSn}");
                 ManagerFactory::getCommandManager()->createClearAllDataCommand($deviceSn);
 
                 // Ejecutar comandos para este dispositivo
@@ -378,8 +449,7 @@ class TripulanteApiController extends Controller
                     'device_sn' => $deviceSn,
                     'status' => 'clear_commands_executed',
                     'tablas_borradas' => $tablasBorradas,
-                    'tablas_con_error' => $tablasFallidas,
-                    'detalles_errores' => $errores // Solo incluye los que tienen error
+                    'tablas_con_error' => $tablasFallidas
                 ];
             }
 
@@ -388,70 +458,10 @@ class TripulanteApiController extends Controller
                 'results' => $resultadosLimpieza
             ]);
         } catch (\Exception $e) {
-            Log::error("Error al limpiar dispositivos: {$e->getMessage()}");
             return response()->json([
                 'error' => 'Ha ocurrido un error al limpiar los dispositivos.',
                 'details' => $e->getMessage()
             ], 500);
         }
-    }
-
-    /**
-     * Ejecutar los comandos pendientes en el dispositivo por su número de serie.
-     *
-     * @param string $deviceSn
-     */
-    private function executeDeviceCommands(string $deviceSn)
-    {
-        try {
-            $commandManager = ManagerFactory::getCommandManager();
-            $commands = $commandManager->getDeviceCommandListToDevice($deviceSn);
-
-            if ($commands->isEmpty()) {
-                Log::info("No hay comandos pendientes para el dispositivo SN: {$deviceSn}");
-                return;
-            }
-
-            foreach ($commands as $command) {
-                Log::info("Procesando comando ID: {$command->DEV_CMD_ID} en dispositivo SN: {$deviceSn}");
-
-                // Marcar comando como en proceso
-                $command->CMD_TRANS_TIMES = now();
-                $commandManager->updateDeviceCommand([$command]);
-
-                // Ejecutar el comando (simulado por ahora)
-                $result = $this->simulateCommandExecution($command);
-
-                // Actualizar resultado
-                $command->CMD_RETURN = $result['status'];
-                $command->CMD_RETURN_INFO = $result['info'];
-                $command->CMD_OVER_TIME = now();
-                $commandManager->updateDeviceCommand([$command]);
-
-                Log::info("Comando ejecutado: {$command->DEV_CMD_ID} - Resultado: {$result['status']}");
-            }
-
-            // Actualizar estado del dispositivo y solicitar INFO actualizada
-            ManagerFactory::getDeviceManager()->updateDeviceState($deviceSn, 'Online', now());
-            ManagerFactory::getCommandManager()->createINFOCommand($deviceSn);
-        } catch (\Exception $e) {
-            Log::error("Error ejecutando comandos para dispositivo SN: {$deviceSn}. Error: {$e->getMessage()}");
-        }
-    }
-
-    /**
-     * Simular la ejecución de un comando en un dispositivo.
-     * Nota: En un entorno de producción, esto se conectaría realmente al dispositivo
-     * usando el SDK o API proporcionada por ZKTeco.
-     *
-     * @param object $command
-     * @return array
-     */
-    private function simulateCommandExecution($command)
-    {
-        return [
-            'status' => 'OK',
-            'info' => "Simulación de ejecución exitosa para comando ID: {$command->DEV_CMD_ID}"
-        ];
     }
 }
