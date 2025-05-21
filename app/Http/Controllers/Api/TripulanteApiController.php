@@ -280,6 +280,16 @@ class TripulanteApiController extends Controller
                     } catch (\Exception $e) {
                         // Registrar el error pero continuar con el siguiente tripulante
                         $dispositivoResult['usuarios_fallidos']++;
+
+                        // Añadir detalles del error para diagnóstico
+                        $dispositivoResult['detalles'][] = [
+                            'tripulante_id' => $tripulante->id_tripulante,
+                            'error' => $e->getMessage(),
+                            'trace' => $e->getTraceAsString() // Opcional: para diagnóstico detallado
+                        ];
+
+                        // También registrar en log
+                        Log::error("Error sincronizando tripulante ID: {$tripulante->id_tripulante} - Error: {$e->getMessage()}");
                     }
                 }
 
