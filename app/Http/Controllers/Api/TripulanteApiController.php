@@ -13,6 +13,7 @@ use App\Models\ZKTeco\ProFaceX\ProFxMeetInfo;
 use App\Models\ZKTeco\ProFaceX\ProFxMessage;
 use App\Models\ZKTeco\ProFaceX\ProFxPersBioTemplate;
 use App\Services\ZKTeco\ProFaceX\Manager\ManagerFactory;
+use App\Services\ZKTeco\ProFaceX\DevCmdUtil;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -96,11 +97,25 @@ class TripulanteApiController extends Controller
 
                 $userInfo->save();
 
+                // Obtener el DEV_FUNS actual del dispositivo
+                $devFuns = $dispositivo->DEV_FUNS;
+
                 // Generar comando para actualizar el usuario en el dispositivo
                 ManagerFactory::getCommandManager()->createUpdateUserInfosCommandByIds(
                     $userInfo,
-                    $dispositivo->DEV_FUNS ?? ''
+                    $devFuns
                 );
+
+                // Generar manualmente los comandos BIOPHOTO y USERPIC si tenemos foto
+                if ($fotoBase64 && $fotoSize) {
+                    // Crear manualmente el comando de actualización de la foto biométrica
+                    $bioPhotoCommand = DevCmdUtil::getUpdateBioPhotoCommand($userInfo, $dispositivo->DEVICE_SN);
+                    $bioPhotoCommand->save();
+
+                    // Verificar el comando de foto de usuario
+                    $userPicCommand = DevCmdUtil::getUpdateUserPicCommand($userInfo, $dispositivo->DEVICE_SN);
+                    $userPicCommand->save();
+                }
 
                 // Ejecutar comandos para el dispositivo
                 $this->executeDeviceCommands($dispositivo->DEVICE_SN);
@@ -185,6 +200,9 @@ class TripulanteApiController extends Controller
                     'detalles' => []
                 ];
 
+                // Obtener el DEV_FUNS actual del dispositivo
+                $devFuns = $dispositivo->DEV_FUNS;
+
                 // Para cada tripulante a sincronizar
                 foreach ($tripulantes as $tripulante) {
                     try {
@@ -235,11 +253,20 @@ class TripulanteApiController extends Controller
 
                         $userInfo->save();
 
-                        // Generar comando para actualizar el usuario en el dispositivo
+                        // Generar comando para actualizar el usuario en el dispositivo usando las funciones forzadas
                         ManagerFactory::getCommandManager()->createUpdateUserInfosCommandByIds(
                             $userInfo,
-                            $dispositivo->DEV_FUNS ?? ''
+                            $devFuns
                         );
+
+                        // Generar manualmente los comandos BIOPHOTO y USERPIC
+                        // Crear manualmente el comando de actualización de la foto biométrica
+                        $bioPhotoCommand = DevCmdUtil::getUpdateBioPhotoCommand($userInfo, $dispositivo->DEVICE_SN);
+                        $bioPhotoCommand->save();
+
+                        // Verificar el comando de foto de usuario
+                        $userPicCommand = DevCmdUtil::getUpdateUserPicCommand($userInfo, $dispositivo->DEVICE_SN);
+                        $userPicCommand->save();
 
                         $dispositivoResult['usuarios_sincronizados']++;
                         $dispositivoResult['detalles'][] = [
