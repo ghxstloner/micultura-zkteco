@@ -5,7 +5,6 @@ namespace App\Services\ZKTeco\ProFaceX;
 use App\Models\ZKTeco\ProFaceX\ProFxDeviceCommand;
 use App\Models\ZKTeco\ProFaceX\ProFxUserInfo;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\Log;
 
 final class DevCmdUtil
 {

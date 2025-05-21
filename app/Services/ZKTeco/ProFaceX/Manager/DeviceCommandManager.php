@@ -7,6 +7,7 @@ use App\Models\ZKTeco\ProFaceX\ProFxUserInfo;
 use App\Services\ZKTeco\ProFaceX\Constants;
 use App\Services\ZKTeco\ProFaceX\DevCmdUtil;
 use App\Services\ZKTeco\ProFaceX\PushUtil;
+use Illuminate\Support\Facades\Log;
 
 class DeviceCommandManager
 {
