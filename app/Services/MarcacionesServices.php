@@ -20,7 +20,7 @@ class MarcacionesServices
                 $tiempoMarcacionCompleto = Carbon::parse($proFxAttLog->VERIFY_TIME);
                 $fechaMarcacion = $tiempoMarcacionCompleto->toDateString();
                 $horaMarcacion = $tiempoMarcacionCompleto->toTimeString();
-                $id_planificacion = 0; // Inicializa siempre en 0
+                $id_planificacion = 0;
                 $crew_id = null;
 
                 // 1. Buscar el tripulante
@@ -32,40 +32,49 @@ class MarcacionesServices
                     // 2. Verificar si YA EXISTE una marcación para este tripulante en esta fecha
                     $marcacionExistente = Marcacion::where('crew_id', $crew_id)
                         ->where('fecha_marcacion', $fechaMarcacion)
-                        ->exists();
+                        ->orderBy('id', 'desc')
+                        ->first();
 
-                    // Solo procesar planificación si NO existe marcación previa
-                    if (!$marcacionExistente && $tripulante->iata_aerolinea) {
-                        // 3. Buscar planificación válida
-                        $planificacion = Planificacion::where('crew_id', $tripulante->crew_id)
-                            ->where('iata_aerolinea', $tripulante->iata_aerolinea)
-                            ->where('fecha_vuelo', $fechaMarcacion)
-                            ->where('estatus', 'P')
-                            ->first();
+                    if ($marcacionExistente && $marcacionExistente->id_planificacion > 0) {
+                        // Si ya existe una marcación con planificación asignada, reutilizar esa planificación
+                        $id_planificacion = $marcacionExistente->id_planificacion;
+                    } else {
+                        // No hay marcación previa con planificación válida, buscar una planificación
+                        if ($tripulante->iata_aerolinea) {
+                            // Buscar planificación con estatus P (pendiente) o R (realizada)
+                            $planificacion = Planificacion::where('crew_id', $tripulante->crew_id)
+                                ->where('iata_aerolinea', $tripulante->iata_aerolinea)
+                                ->where('fecha_vuelo', $fechaMarcacion)
+                                ->whereIn('estatus', ['P', 'R'])
+                                ->first();
 
-                        if ($planificacion) {
-                            // Marcación válida: actualizar planificación y guardar su ID
-                            $id_planificacion = $planificacion->id;
-                            $planificacion->estatus = 'R';
-                            $planificacion->save();
+                            if ($planificacion) {
+                                $id_planificacion = $planificacion->id;
+
+                                // Actualizar el estatus solo si está en 'P'
+                                if ($planificacion->estatus === 'P') {
+                                    $planificacion->estatus = 'R';
+                                    $planificacion->save();
+                                }
+                            }
                         }
                     }
                 }
 
-                // 4. Obtener lugar_marcacion
+                // 3. Obtener lugar_marcacion
                 $deviceSn = $proFxAttLog->DEVICE_SN;
-                $lugarMarcacion = $deviceSn; // Valor por defecto
+                $lugarMarcacion = $deviceSn;
 
                 $deviceInfo = ProFxDeviceInfo::where('DEVICE_SN', $deviceSn)->first();
                 if ($deviceInfo) {
                     $lugarMarcacion = $deviceInfo->DEVICE_ID;
                 }
 
-                // 5. SIEMPRE insertar la marcación (punto clave del requerimiento)
+                // 4. Insertar la marcación
                 $marcacion = new Marcacion();
-                $marcacion->id_planificacion = $id_planificacion; // Será 0 si no hay planificación válida
+                $marcacion->id_planificacion = $id_planificacion;
                 $marcacion->crew_id = $crew_id;
-                $marcacion->id_tripulante = $id_tripulante; // AÑADIDO: Guardamos el ID del tripulante
+                $marcacion->id_tripulante = $id_tripulante;
                 $marcacion->fecha_marcacion = $fechaMarcacion;
                 $marcacion->hora_marcacion = $horaMarcacion;
                 $marcacion->lugar_marcacion = $lugarMarcacion;
