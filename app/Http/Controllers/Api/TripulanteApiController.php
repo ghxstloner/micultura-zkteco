@@ -408,26 +408,31 @@ class TripulanteApiController extends Controller
             $commands = $commandManager->getDeviceCommandListToDevice($deviceSn);
 
             if ($commands->isEmpty()) {
+                Log::info("No hay comandos pendientes para el dispositivo SN: {$deviceSn}");
                 return;
             }
 
             foreach ($commands as $command) {
-                // Marcar comando como en proceso - Formatear fecha sin milisegundos
-                $command->CMD_TRANS_TIMES = now()->format('Y-m-d H:i:s');
+                Log::info("Procesando comando ID: {$command->DEV_CMD_ID} en dispositivo SN: {$deviceSn}");
+
+                // Marcar comando como en proceso
+                $command->CMD_TRANS_TIMES = now();
                 $commandManager->updateDeviceCommand([$command]);
 
-                // Ejecutar el comando
+                // Ejecutar el comando (simulado por ahora)
                 $result = $this->simulateCommandExecution($command);
 
-                // Actualizar resultado - Formatear fecha sin milisegundos
+                // Actualizar resultado
                 $command->CMD_RETURN = $result['status'];
                 $command->CMD_RETURN_INFO = $result['info'];
-                $command->CMD_OVER_TIME = now()->format('Y-m-d H:i:s');
+                $command->CMD_OVER_TIME = now();
                 $commandManager->updateDeviceCommand([$command]);
+
+                Log::info("Comando ejecutado: {$command->DEV_CMD_ID} - Resultado: {$result['status']}");
             }
 
             // Actualizar estado del dispositivo y solicitar INFO actualizada
-            ManagerFactory::getDeviceManager()->updateDeviceState($deviceSn, 'Online', now()->format('Y-m-d H:i:s'));
+            ManagerFactory::getDeviceManager()->updateDeviceState($deviceSn, 'Online', now());
             ManagerFactory::getCommandManager()->createINFOCommand($deviceSn);
         } catch (\Exception $e) {
             Log::error("Error ejecutando comandos para dispositivo SN: {$deviceSn}. Error: {$e->getMessage()}");

@@ -48,7 +48,7 @@ class DownloadProcessController extends Controller
                 $sb .= $content;
 
                 /**Sets the transmit time*/
-                $command->CMD_TRANS_TIMES = Carbon::now()->format('Y-m-d H:i:s');
+                $command->CMD_TRANS_TIMES = Carbon::now()->toDateTimeString();
                 $tempList[] = $command;
             }
             /**Sets the command*/
@@ -174,7 +174,7 @@ class DownloadProcessController extends Controller
 
                 if ($command) {
                     $deviceSn = $command->DEVICE_SN;
-                    $command->CMD_OVER_TIME = Carbon::now()->format('Y-m-d H:i:s');
+                    $command->CMD_OVER_TIME = Carbon::now()->toDateTimeString();
                     $command->CMD_RETURN = $cmdReturn;
                     $command->CMD_RETURN_INFO = $data;
 
@@ -249,7 +249,7 @@ class DownloadProcessController extends Controller
         // update the device command info
         $command = ManagerFactory::getCommandManager()->getDeviceCommandById($devCmdId);
         if (!is_null($command)) {
-            $command->CMD_OVER_TIME = Carbon::now()->format('Y-m-d H:i:s');
+            $command->CMD_OVER_TIME = Carbon::now()->toDateTimeString();
             $command->CMD_RETURN = $cmdReturn;
             $command->CMD_RETURN_INFO = $data;
             ManagerFactory::getCommandManager()->updateDeviceCommand([$command]);
@@ -328,7 +328,7 @@ class DownloadProcessController extends Controller
 
         $command = ManagerFactory::getCommandManager()->getDeviceCommandById($devCmdId);
         if (!is_null($command)) {
-            $command->CMD_OVER_TIME = Carbon::now()->format('Y-m-d H:i:s');
+            $command->CMD_OVER_TIME = Carbon::now()->toDateTimeString();
             $command->CMD_RETURN = $cmdReturn;
             $command->CMD_RETURN_INFO = $data;
             ManagerFactory::getCommandManager()->updateDeviceCommand($command);
