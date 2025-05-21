@@ -100,22 +100,10 @@ class TripulanteApiController extends Controller
                 // Obtener el DEV_FUNS actual del dispositivo
                 $devFuns = $dispositivo->DEV_FUNS;
 
-                // Generar comando para actualizar el usuario en el dispositivo
                 ManagerFactory::getCommandManager()->createUpdateUserInfosCommandByIds(
                     $userInfo,
                     $devFuns
                 );
-
-                // Generar manualmente los comandos BIOPHOTO y USERPIC si tenemos foto
-                if ($fotoBase64 && $fotoSize) {
-                    // Crear manualmente el comando de actualización de la foto biométrica
-                    $bioPhotoCommand = DevCmdUtil::getUpdateBioPhotoCommand($userInfo, $dispositivo->DEVICE_SN);
-                    $bioPhotoCommand->save();
-
-                    // Verificar el comando de foto de usuario
-                    $userPicCommand = DevCmdUtil::getUpdateUserPicCommand($userInfo, $dispositivo->DEVICE_SN);
-                    $userPicCommand->save();
-                }
 
                 // Ejecutar comandos para el dispositivo
                 $this->executeDeviceCommands($dispositivo->DEVICE_SN);
@@ -253,20 +241,10 @@ class TripulanteApiController extends Controller
 
                         $userInfo->save();
 
-                        // Generar comando para actualizar el usuario en el dispositivo usando las funciones forzadas
                         ManagerFactory::getCommandManager()->createUpdateUserInfosCommandByIds(
                             $userInfo,
                             $devFuns
                         );
-
-                        // Generar manualmente los comandos BIOPHOTO y USERPIC
-                        // Crear manualmente el comando de actualización de la foto biométrica
-                        $bioPhotoCommand = DevCmdUtil::getUpdateBioPhotoCommand($userInfo, $dispositivo->DEVICE_SN);
-                        $bioPhotoCommand->save();
-
-                        // Verificar el comando de foto de usuario
-                        $userPicCommand = DevCmdUtil::getUpdateUserPicCommand($userInfo, $dispositivo->DEVICE_SN);
-                        $userPicCommand->save();
 
                         $dispositivoResult['usuarios_sincronizados']++;
                         $dispositivoResult['detalles'][] = [
