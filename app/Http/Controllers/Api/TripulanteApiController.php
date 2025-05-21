@@ -333,7 +333,7 @@ class TripulanteApiController extends Controller
                 $command->CMD_TRANS_TIMES = now();
                 $commandManager->updateDeviceCommand([$command]);
 
-                $result = $this->simulateCommandExecution($command);
+                // $result = $this->simulateCommandExecution($command);
 
                 $command->CMD_RETURN = $result['status'];
                 $command->CMD_RETURN_INFO = $result['info'];
