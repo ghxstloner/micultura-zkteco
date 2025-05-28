@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Schema;
 class DumpSchema extends Command
 {
     protected $signature = 'schema:dump';
-    protected $description = 'Dumps the database schema (tables, columns, types, keys) using SQL Server 2012 compatible queries for indexes.';
+    protected $description = 'Dumps the database schema (tables, columns, types, keys) using MySQL compatible queries for indexes.';
 
     public function handle()
     {
@@ -34,35 +34,28 @@ class DumpSchema extends Command
 
                 $columns = Schema::getColumns($tableName);
 
-                // ---- MODIFICACIÓN AQUÍ PARA OBTENER ÍNDICES ----
+                // ---- MODIFICACIÓN PARA USAR MYSQL ----
                 $rawIndexesQuery = "
                     SELECT
-                        idx.name AS name,
-                        idx.type_desc AS type, -- Aunque no lo uses en la tabla final, lo obtenemos por consistencia
-                        idx.is_unique AS [unique],
-                        idx.is_primary_key AS [primary],
-                        STUFF(
-                            (SELECT ',' + col_inner.name
-                             FROM sys.index_columns AS idxcol_inner
-                             INNER JOIN sys.columns AS col_inner ON idxcol_inner.object_id = col_inner.object_id AND idxcol_inner.column_id = col_inner.column_id
-                             WHERE idxcol_inner.object_id = idx.object_id AND idxcol_inner.index_id = idx.index_id
-                             ORDER BY idxcol_inner.key_ordinal
-                             FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'),
-                            1, 1, ''
-                        ) AS columns_list_str
+                        i.name AS name,
+                        i.is_unique AS `unique`,
+                        i.is_primary AS `primary`,
+                        GROUP_CONCAT(c.name ORDER BY i.seq_in_index) AS columns_list_str
                     FROM
-                        sys.indexes AS idx
-                    INNER JOIN
-                        sys.tables AS tbl ON idx.object_id = tbl.object_id
-                    INNER JOIN
-                        sys.schemas AS scm ON tbl.schema_id = scm.schema_id
+                        information_schema.statistics i
+                    JOIN
+                        information_schema.columns c
+                    ON
+                        i.table_schema = c.table_schema
+                        AND i.table_name = c.table_name
+                        AND i.column_name = c.column_name
                     WHERE
-                        tbl.name = ? AND scm.name = SCHEMA_NAME()
-                        AND idx.type <> 0
-                        AND idx.is_hypothetical = 0
-                        AND idx.is_disabled = 0
+                        i.table_schema = DATABASE()
+                        AND i.table_name = ?
+                    GROUP BY
+                        i.name, i.is_unique, i.is_primary
                     ORDER BY
-                        idx.name
+                        i.name
                 ";
 
                 $rawIndexesResult = DB::select($rawIndexesQuery, [$tableName]);
@@ -71,12 +64,9 @@ class DumpSchema extends Command
                 foreach ($rawIndexesResult as $rawIndex) {
                     $indexes[] = [
                         'name' => $rawIndex->name,
-                        // La consulta devuelve una cadena de columnas separadas por coma.
-                        // Tu código espera un array para 'columns' (para in_array y implode).
                         'columns' => $rawIndex->columns_list_str ? explode(',', $rawIndex->columns_list_str) : [],
                         'unique' => (bool) $rawIndex->unique,
                         'primary' => (bool) $rawIndex->primary,
-                        // 'type' => $rawIndex->type, // Puedes incluirlo si lo necesitas más adelante
                     ];
                 }
                 // ---- FIN DE LA MODIFICACIÓN ----

@@ -16,7 +16,7 @@ return [
     |
     */
 
-    'default' => env('DB_CONNECTION', 'sqlite'),
+    'default' => env('DB_CONNECTION', 'mysql'),
 
     /*
     |--------------------------------------------------------------------------
@@ -115,19 +115,19 @@ return [
             'sslmode' => 'prefer',
         ],
 
-'sqlsrv' => [
-    'driver' => 'sqlsrv',
-    'url' => env('DB_URL'),
-    'host' => env('DB_HOST', 'localhost'),
-    'port' => env('DB_PORT', '1433'),
-    'database' => env('DB_DATABASE', 'laravel').';TrustServerCertificate=Yes;Encrypt=No',
-    'username' => env('DB_USERNAME', 'root'),
-    'password' => env('DB_PASSWORD', ''),
-    'charset' => env('DB_CHARSET', 'utf8'),
-    'prefix' => '',
-    'prefix_indexes' => true,
-    'options' => [],
-],
+        'sqlsrv' => [
+            'driver' => 'sqlsrv',
+            'url' => env('DB_URL'),
+            'host' => env('DB_HOST', 'localhost'),
+            'port' => env('DB_PORT', '1433'),
+            'database' => env('DB_DATABASE', 'laravel'),
+            'username' => env('DB_USERNAME', 'root'),
+            'password' => env('DB_PASSWORD', ''),
+            'charset' => env('DB_CHARSET', 'utf8'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'options' => [],
+        ],
 
     ],
 
