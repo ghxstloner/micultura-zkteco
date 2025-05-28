@@ -147,7 +147,15 @@ class TripulanteApiController extends Controller
             // Validar los dispositivos seleccionados
             $validator = Validator::make($request->all(), [
                 'device_ids' => 'required|array',
-                'device_ids.*' => 'required|integer|exists:profacex_device_info,DEVICE_ID',
+                'device_ids.*' => [
+                    'required',
+                    'integer',
+                    function ($attribute, $value, $fail) {
+                        if (!ProFxDeviceInfo::where('DEVICE_ID', $value)->exists()) {
+                            $fail('El device_id no existe.');
+                        }
+                    }
+                ],
             ]);
 
             if ($validator->fails()) {
@@ -335,8 +343,8 @@ class TripulanteApiController extends Controller
 
                 // $result = $this->simulateCommandExecution($command);
 
-                $command->CMD_RETURN = $result['status'];
-                $command->CMD_RETURN_INFO = $result['info'];
+                // $command->CMD_RETURN = $result['status'];
+                // $command->CMD_RETURN_INFO = $result['info'];
                 $command->CMD_OVER_TIME = now();
                 $commandManager->updateDeviceCommand([$command]);
 
@@ -432,10 +440,18 @@ class TripulanteApiController extends Controller
     public function clearDevices(Request $request)
     {
         try {
-            // Validar los dispositivos seleccionados con el nombre correcto de la columna
+            // Validar los dispositivos seleccionados
             $validator = Validator::make($request->all(), [
                 'device_ids' => 'required|array',
-                'device_ids.*' => 'required|integer|exists:profacex_device_info,DEVICE_ID',
+                'device_ids.*' => [
+                    'required',
+                    'integer',
+                    function ($attribute, $value, $fail) {
+                        if (!ProFxDeviceInfo::where('DEVICE_ID', $value)->exists()) {
+                            $fail('El device_id no existe.');
+                        }
+                    }
+                ],
             ]);
 
             if ($validator->fails()) {
