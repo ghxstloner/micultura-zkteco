@@ -2,9 +2,6 @@
 
 namespace App\Models\ZKTeco\ProFaceX;
 
-use App\Models\Edificio;
-use App\Models\ExpedienteMarcacion;
-use App\Models\Provincia;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -13,8 +10,6 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 /** @property string $DEVICE_SN */
 class ProFxDeviceInfo extends Model
 {
-    use CrudTrait;
-
     /*
     |--------------------------------------------------------------------------
     | GLOBAL VARIABLES
