@@ -5,7 +5,6 @@ namespace App\Models\ZKTeco\ProFaceX;
 use App\Models\Edificio;
 use App\Models\ExpedienteMarcacion;
 use App\Models\Provincia;
-use Backpack\CRUD\app\Models\Traits\CrudTrait;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
