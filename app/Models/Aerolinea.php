@@ -34,9 +34,11 @@ class Aerolinea extends Model
     /**
      * Los atributos que deben ser casteados.
      */
+    /*
     protected $casts = [
         'logo' => 'binary',
     ];
+    */
 
     /**
      * Obtiene los tripulantes de esta aerolínea.
