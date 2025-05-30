@@ -3,553 +3,408 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\ZKTeco\ProFaceX\ProFxDeviceInfo;
-use App\Models\ZKTeco\ProFaceX\ProFxUserInfo;
-use App\Models\ZKTeco\ProFaceX\ProFxAdvInfo;
-use App\Models\ZKTeco\ProFaceX\ProFxAttLog;
-use App\Models\ZKTeco\ProFaceX\ProFxAttPhoto;
-use App\Models\ZKTeco\ProFaceX\ProFxDeviceAttrs;
-use App\Models\ZKTeco\ProFaceX\ProFxMeetInfo;
-use App\Models\ZKTeco\ProFaceX\ProFxMessage;
-use App\Models\ZKTeco\ProFaceX\ProFxPersBioTemplate;
-use App\Services\ZKTeco\ProFaceX\Manager\ManagerFactory;
-use App\Services\ZKTeco\ProFaceX\DevCmdUtil;
+use App\Http\Resources\TripulanteResource;
+use App\Http\Resources\PosicionResource;
+use App\Models\Tripulante;
+use App\Models\Posicion;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 
 class TripulanteApiController extends Controller
 {
     /**
-     * Recibe datos de una persona y los envía a los dispositivos ZKTeco.
+     * Listar tripulantes con filtros opcionales.
      *
      * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
-    public function store(Request $request)
+    public function index(Request $request): JsonResponse
     {
-        // Validar los datos de entrada
-        $validator = Validator::make($request->all(), [
-            'id_tripulante' => 'required|string|max:255', // ID único para el dispositivo
-            'nombres' => 'required|string|max:100',
-            'apellidos' => 'required|string|max:100',
-            'foto' => 'nullable|image|mimes:jpeg,png,jpg|max:2048', // Foto como archivo, opcional
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json(['error' => $validator->errors()], 422);
-        }
-
         try {
-            $fotoBase64 = null;
-            $fotoSize = null;
-            $fotoNombreParaDispositivo = null;
+            // Obtener el usuario autenticado
+            $user = $request->user();
 
-            if ($request->hasFile('foto')) {
-                $foto = $request->file('foto');
-                $fotoContent = file_get_contents($foto->getRealPath());
+            // Validar parámetros de consulta
+            $validator = Validator::make($request->all(), [
+                'page' => 'integer|min:1',
+                'per_page' => 'integer|min:1|max:100',
+                'search' => 'string|max:255',
+                'posicion' => 'integer|exists:posiciones,id_posicion',
+                'id_aerolinea' => 'integer|exists:aerolineas,id_aerolinea',
+            ]);
 
-                // Comprimir la imagen antes de convertirla a base64
-                $compressedImage = $this->compressImage($fotoContent);
-
-                $fotoBase64 = base64_encode($compressedImage);
-                $fotoSize = strlen($compressedImage);
-                $fotoNombreParaDispositivo = $request->id_tripulante . ".jpg";
-            }
-
-            $nombreCompleto = $request->nombres . ' ' . $request->apellidos;
-
-            // Obtener dispositivos activos
-            $dispositivosActivos = ProFxDeviceInfo::activos()->get();
-
-            if ($dispositivosActivos->isEmpty()) {
+            if ($validator->fails()) {
                 return response()->json([
-                    'warning' => 'No hay dispositivos activos disponibles',
-                    'id_tripulante_procesado' => $request->id_tripulante
-                ], 200);
+                    'success' => false,
+                    'message' => 'Parámetros de consulta inválidos',
+                    'errors' => $validator->errors()
+                ], 422);
             }
 
-            $resultados = [];
+            // Inicializar consulta
+            $query = Tripulante::with(['aerolinea', 'posicionModel']);
 
-            foreach ($dispositivosActivos as $dispositivo) {
-                // Obtener el DEV_FUNS actual del dispositivo - IMPORTANTE: Esto faltaba en el método original
-                $devFuns = $dispositivo->DEV_FUNS;
+            // Si el usuario no es admin, solo puede ver tripulantes de su aerolínea
+            if (!$user->isAdmin() && $user->id_aerolinea) {
+                $query->porAerolinea($user->id_aerolinea);
+            }
 
-                // Buscar o crear el usuario en el dispositivo
-                $userInfo = ProFxUserInfo::firstOrNew([
-                    'USER_PIN' => $request->id_tripulante,
-                    'DEVICE_SN' => $dispositivo->DEVICE_SN
-                ]);
+            // Aplicar filtros
+            if ($request->filled('search')) {
+                $query->buscarPorNombre($request->search);
+            }
 
-                // Rellenar la información del usuario
-                $userInfo->NAME = $nombreCompleto;
-                $userInfo->MAIN_CARD = $request->id_tripulante; // Importante: se usa en el código original
+            if ($request->filled('posicion')) {
+                $query->porPosicion($request->posicion);
+            }
 
-                if ($fotoBase64 && $fotoSize) {
-                    $userInfo->PHOTO_ID_NAME = $fotoNombreParaDispositivo;
-                    $userInfo->PHOTO_ID_SIZE = $fotoSize;
-                    $userInfo->PHOTO_ID_CONTENT = $fotoBase64;
+            if ($request->filled('id_aerolinea')) {
+                // Solo admin puede filtrar por aerolínea diferente a la suya
+                if ($user->isAdmin() || $user->id_aerolinea == $request->id_aerolinea) {
+                    $query->porAerolinea($request->id_aerolinea);
                 }
-
-                // Valores predeterminados según el código original
-                $userInfo->PASSWORD = "";
-                $userInfo->FACE_GROUP_ID = 0;
-                $userInfo->ACC_GROUP_ID = 0;
-                $userInfo->DEPT_ID = 0;
-                $userInfo->IS_GROUP_TZ = 0;
-                $userInfo->VERIFY_TYPE = 0;
-                $userInfo->category = 0;
-                $userInfo->PRIVILEGE = 0;
-
-                $userInfo->save();
-
-                ManagerFactory::getCommandManager()->createUpdateUserInfosCommandByIds(
-                    $userInfo,
-                    $devFuns
-                );
-
-                // Ejecutar comandos para CADA dispositivo INMEDIATAMENTE - Como en syncDevices
-                $this->executeDeviceCommands($dispositivo->DEVICE_SN);
-
-                $resultados[] = [
-                    'device_id' => $dispositivo->DEVICE_ID,
-                    'device_sn' => $dispositivo->DEVICE_SN,
-                    'resultado' => 'Comandos enviados correctamente'
-                ];
             }
+
+            // Ordenar por fecha de creación descendente
+            $query->orderBy('fecha_creacion', 'desc');
+
+            // Paginación
+            $perPage = $request->get('per_page', 15);
+            $tripulantes = $query->paginate($perPage);
 
             return response()->json([
-                'message' => 'Datos de persona enviados a dispositivos exitosamente',
-                'id_tripulante_procesado' => $request->id_tripulante,
-                'resultados_dispositivos' => $resultados
-            ], 200);
+                'success' => true,
+                'message' => 'Tripulantes obtenidos exitosamente',
+                'data' => TripulanteResource::collection($tripulantes),
+                'pagination' => [
+                    'current_page' => $tripulantes->currentPage(),
+                    'last_page' => $tripulantes->lastPage(),
+                    'per_page' => $tripulantes->perPage(),
+                    'total' => $tripulantes->total(),
+                    'from' => $tripulantes->firstItem(),
+                    'to' => $tripulantes->lastItem(),
+                ]
+            ]);
 
         } catch (\Exception $e) {
             return response()->json([
-                'error' => 'Error al procesar y enviar datos de persona',
-                'details' => $e->getMessage()
+                'success' => false,
+                'message' => 'Error al obtener tripulantes',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : 'Error interno'
             ], 500);
         }
     }
 
     /**
-     * Sincronizar todos los tripulantes con los dispositivos seleccionados.
-     * Sincroniza TODOS los tripulantes que tienen una imagen válida.
+     * Crear un nuevo tripulante.
      *
      * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
-    public function syncDevices(Request $request)
+    public function store(Request $request): JsonResponse
     {
         try {
-            // Validar los dispositivos seleccionados
+            // Obtener el usuario autenticado
+            $user = $request->user();
+
+            // Validar los datos de entrada
             $validator = Validator::make($request->all(), [
-                'device_ids' => 'required|array',
-                'device_ids.*' => [
-                    'required',
-                    'integer',
-                    function ($attribute, $value, $fail) {
-                        if (!ProFxDeviceInfo::where('DEVICE_ID', $value)->exists()) {
-                            $fail('El device_id no existe.');
-                        }
-                    }
-                ],
+                'crew_id' => 'required|string|max:10',
+                'nombres' => 'required|string|max:50',
+                'apellidos' => 'required|string|max:50',
+                'pasaporte' => 'nullable|string|max:20',
+                'identidad' => 'nullable|string|max:20',
+                'posicion' => 'required|integer|exists:posiciones,id_posicion',
+                'imagen' => 'nullable|string|max:250',
+                'iata_aerolinea' => 'required|string|size:2',
+                'id_aerolinea' => 'nullable|integer|exists:aerolineas,id_aerolinea',
             ]);
 
             if ($validator->fails()) {
-                return response()->json(['error' => $validator->errors()], 422);
-            }
-
-            $deviceIds = $request->device_ids;
-
-            if (empty($deviceIds)) {
                 return response()->json([
-                    'error' => 'No se seleccionaron dispositivos para sincronizar.'
-                ], 400);
+                    'success' => false,
+                    'message' => 'Datos de entrada inválidos',
+                    'errors' => $validator->errors()
+                ], 422);
             }
 
-            // Obtener dispositivos seleccionados
-            $dispositivos = ProFxDeviceInfo::whereIn('DEVICE_ID', $deviceIds)->get();
+            // Determinar la aerolínea
+            $idAerolinea = $request->id_aerolinea;
 
-            if ($dispositivos->isEmpty()) {
-                return response()->json([
-                    'error' => 'No se encontraron dispositivos válidos para sincronizar.'
-                ], 400);
-            }
-
-            // Obtener la URL base desde las variables de entorno
-            $baseUrl = env('IMAGEN_URL_BASE');
-
-            // Obtener todos los tripulantes que tienen una imagen asignada - Optimización: seleccionar solo columnas necesarias
-            $tripulantes = DB::table('tripulantes')
-                ->whereNotNull('imagen')
-                ->whereNotNull('iata_aerolinea')
-                ->whereNotNull('crew_id')
-                ->select('id_tripulante', 'nombres', 'apellidos', 'imagen', 'iata_aerolinea', 'crew_id')
-                ->get();
-
-            if ($tripulantes->isEmpty()) {
-                return response()->json([
-                    'message' => 'No hay tripulantes con imágenes para sincronizar.'
-                ], 200);
-            }
-
-            $resultadosSincronizacion = [];
-
-            // Para cada dispositivo seleccionado
-            foreach ($dispositivos as $dispositivo) {
-                $dispositivoResult = [
-                    'device_id' => $dispositivo->DEVICE_ID,
-                    'device_sn' => $dispositivo->DEVICE_SN,
-                    'usuarios_sincronizados' => 0,
-                    'usuarios_fallidos' => 0,
-                    'detalles' => []
-                ];
-
-                // Obtener el DEV_FUNS actual del dispositivo
-                $devFuns = $dispositivo->DEV_FUNS;
-                $loteUserInfos = [];
-                $loteSize = 50; // Procesar en lotes de 50 usuarios
-
-                // Para cada tripulante a sincronizar
-                foreach ($tripulantes as $index => $tripulante) {
-                    try {
-                        // Construir la URL de la imagen
-                        $imagenUrl = "{$baseUrl}/{$tripulante->iata_aerolinea}/{$tripulante->crew_id}/{$tripulante->imagen}";
-
-                        // Intentar obtener la imagen y verificar que sea válida
-                        $fotoContent = @file_get_contents($imagenUrl);
-
-                        if ($fotoContent === false) {
-                            throw new \Exception("No se pudo obtener la imagen");
-                        }
-
-                        // Verificar que el contenido sea una imagen válida - Optimización: verificación simplificada
-                        $finfo = new \finfo(FILEINFO_MIME_TYPE);
-                        $mimeType = $finfo->buffer($fotoContent);
-
-                        if (strpos($mimeType, 'image/') !== 0) {
-                            throw new \Exception("El contenido obtenido no es una imagen válida");
-                        }
-
-                        // Comprimir la imagen antes de convertirla a base64
-                        $compressedImage = $this->compressImage($fotoContent);
-
-                        $fotoBase64 = base64_encode($compressedImage);
-                        $fotoSize = strlen($compressedImage);
-                        $fotoNombreParaDispositivo = $tripulante->id_tripulante . ".jpg";
-
-                        // Buscar o crear el userInfo en el dispositivo destino
-                        $userInfo = ProFxUserInfo::firstOrNew([
-                            'USER_PIN' => $tripulante->id_tripulante,
-                            'DEVICE_SN' => $dispositivo->DEVICE_SN
-                        ]);
-
-                        // Rellenar la información del usuario
-                        $userInfo->NAME = $tripulante->nombres . ' ' . $tripulante->apellidos;
-                        $userInfo->MAIN_CARD = $tripulante->id_tripulante;
-                        $userInfo->PHOTO_ID_NAME = $fotoNombreParaDispositivo;
-                        $userInfo->PHOTO_ID_SIZE = $fotoSize;
-                        $userInfo->PHOTO_ID_CONTENT = $fotoBase64;
-
-                        // Valores predeterminados
-                        $userInfo->PASSWORD = "";
-                        $userInfo->FACE_GROUP_ID = 0;
-                        $userInfo->ACC_GROUP_ID = 0;
-                        $userInfo->DEPT_ID = 0;
-                        $userInfo->IS_GROUP_TZ = 0;
-                        $userInfo->VERIFY_TYPE = 0;
-                        $userInfo->category = 0;
-                        $userInfo->PRIVILEGE = 0;
-
-                        $userInfo->save();
-
-                        // Añadir a la cola de procesamiento por lotes
-                        $loteUserInfos[] = $userInfo;
-
-                        // Procesar en lotes para mejorar rendimiento
-                        if (count($loteUserInfos) >= $loteSize || $index == count($tripulantes) - 1) {
-                            // Procesar lote actual de usuarios
-                            foreach ($loteUserInfos as $info) {
-                                ManagerFactory::getCommandManager()->createUpdateUserInfosCommandByIds(
-                                    $info,
-                                    $devFuns
-                                );
-                            }
-
-                            // Reiniciar el lote
-                            $loteUserInfos = [];
-                        }
-
-                        $dispositivoResult['usuarios_sincronizados']++;
-
-                    } catch (\Exception $e) {
-                        // Registrar el error pero continuar con el siguiente tripulante
-                        $dispositivoResult['usuarios_fallidos']++;
-
-                        // Añadir detalles del error para diagnóstico
-                        $dispositivoResult['detalles'][] = [
-                            'tripulante_id' => $tripulante->id_tripulante,
-                            'error' => $e->getMessage(),
-                            'trace' => $e->getTraceAsString() // Opcional: para diagnóstico detallado
-                        ];
-
-                        // También registrar en log
-                        Log::error("Error sincronizando tripulante ID: {$tripulante->id_tripulante} - Error: {$e->getMessage()}");
-                    }
+            // Si el usuario no es admin, usar su aerolínea
+            if (!$user->isAdmin()) {
+                if (!$user->id_aerolinea) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Usuario sin aerolínea asignada'
+                    ], 403);
                 }
-
-                // Ejecutar comandos para este dispositivo una sola vez al final
-                $this->executeDeviceCommands($dispositivo->DEVICE_SN);
-
-                $resultadosSincronizacion[] = $dispositivoResult;
+                $idAerolinea = $user->id_aerolinea;
             }
 
-            return response()->json([
-                'message' => 'Proceso de sincronización completado para los dispositivos seleccionados.',
-                'results' => $resultadosSincronizacion
+            // Verificar si ya existe un tripulante con el mismo crew_id en la misma aerolínea
+            $existeTripulante = Tripulante::where('crew_id', $request->crew_id)
+                ->where('id_aerolinea', $idAerolinea)
+                ->exists();
+
+            if ($existeTripulante) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Ya existe un tripulante con este crew_id en la aerolínea'
+                ], 422);
+            }
+
+            // Crear el tripulante
+            DB::beginTransaction();
+
+            $tripulante = Tripulante::create([
+                'id_aerolinea' => $idAerolinea,
+                'iata_aerolinea' => $request->iata_aerolinea,
+                'crew_id' => $request->crew_id,
+                'nombres' => $request->nombres,
+                'apellidos' => $request->apellidos,
+                'pasaporte' => $request->pasaporte,
+                'identidad' => $request->identidad,
+                'posicion' => $request->posicion,
+                'imagen' => $request->imagen,
+                'fecha_creacion' => now(),
             ]);
 
-        } catch (\Exception $e) {
+            DB::commit();
+
+            // Cargar las relaciones
+            $tripulante->load(['aerolinea', 'posicionModel']);
+
             return response()->json([
-                'error' => 'Ha ocurrido un error durante la sincronización.',
-                'details' => $e->getMessage()
+                'success' => true,
+                'message' => 'Tripulante creado exitosamente',
+                'data' => new TripulanteResource($tripulante)
+            ], 201);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al crear tripulante',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : 'Error interno'
             ], 500);
         }
     }
 
     /**
-     * Ejecutar los comandos pendientes en el dispositivo por su número de serie.
-     *
-     * @param string $deviceSn
-     */
-    private function executeDeviceCommands(string $deviceSn)
-    {
-        try {
-            $commandManager = ManagerFactory::getCommandManager();
-            $commands = $commandManager->getDeviceCommandListToDevice($deviceSn);
-
-            if ($commands->isEmpty()) {
-
-                return;
-            }
-
-            foreach ($commands as $command) {
-
-                $command->CMD_TRANS_TIMES = now();
-                $commandManager->updateDeviceCommand([$command]);
-
-                // $result = $this->simulateCommandExecution($command);
-
-                // $command->CMD_RETURN = $result['status'];
-                // $command->CMD_RETURN_INFO = $result['info'];
-                $command->CMD_OVER_TIME = now();
-                $commandManager->updateDeviceCommand([$command]);
-
-
-            }
-
-            ManagerFactory::getDeviceManager()->updateDeviceState($deviceSn, 'Online', now());
-            ManagerFactory::getCommandManager()->createINFOCommand($deviceSn);
-        } catch (\Exception $e) {
-            Log::error("Error ejecutando comandos para dispositivo SN: {$deviceSn}. Error: {$e->getMessage()}");
-        }
-    }
-
-    /**
-     * Simular la ejecución de un comando en un dispositivo.
-     *
-     * @param object $command
-     * @return array
-     */
-    private function simulateCommandExecution($command)
-    {
-        return [
-            'status' => 'OK',
-            'info' => "Simulación de ejecución para comando ID: {$command->DEV_CMD_ID}"
-        ];
-    }
-
-    /**
-     * Comprime una imagen antes de convertirla a base64.
-     *
-     * @param string $imageData Los datos binarios de la imagen
-     * @param int $quality La calidad de compresión (0-100)
-     * @return string Los datos binarios de la imagen comprimida
-     */
-    private function compressImage($imageData, $quality = 75)
-    {
-        // Ajustar a una calidad más baja para archivos grandes
-        $image = imagecreatefromstring($imageData);
-
-        if ($image === false) {
-            return $imageData;
-        }
-
-        // Determinar tamaño original
-        $originalSize = strlen($imageData);
-        $targetQuality = 75; // Calidad predeterminada
-
-        // Reducir calidad proporcionalmente para imágenes más grandes
-        if ($originalSize > 500000) { // >500KB
-            $targetQuality = 30;
-        } elseif ($originalSize > 200000) { // >200KB
-            $targetQuality = 40;
-        } elseif ($originalSize > 100000) { // >100KB
-            $targetQuality = 50;
-        }
-
-        // También podemos redimensionar la imagen si es muy grande
-        $width = imagesx($image);
-        $height = imagesy($image);
-
-        if ($width > 800 || $height > 800) {
-            // Redimensionar manteniendo la proporción
-            if ($width > $height) {
-                $newWidth = 800;
-                $newHeight = ($height / $width) * 800;
-            } else {
-                $newHeight = 800;
-                $newWidth = ($width / $height) * 800;
-            }
-
-            $tempImage = imagecreatetruecolor($newWidth, $newHeight);
-            imagecopyresampled($tempImage, $image, 0, 0, 0, 0, $newWidth, $newHeight, $width, $height);
-            imagedestroy($image);
-            $image = $tempImage;
-        }
-
-        ob_start();
-        imagejpeg($image, null, $targetQuality);
-        $compressedData = ob_get_contents();
-        ob_end_clean();
-
-        imagedestroy($image);
-
-        return $compressedData;
-    }
-
-    /**
-     * Limpiar los datos de los dispositivos seleccionados.
+     * Mostrar un tripulante específico.
      *
      * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
+     * @param int $id
+     * @return JsonResponse
      */
-    public function clearDevices(Request $request)
+    public function show(Request $request, int $id): JsonResponse
     {
         try {
-            // Validar los dispositivos seleccionados
+            $user = $request->user();
+
+            // Buscar el tripulante
+            $query = Tripulante::with(['aerolinea', 'posicionModel']);
+
+            // Si el usuario no es admin, solo puede ver tripulantes de su aerolínea
+            if (!$user->isAdmin() && $user->id_aerolinea) {
+                $query->porAerolinea($user->id_aerolinea);
+            }
+
+            $tripulante = $query->findOrFail($id);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Tripulante obtenido exitosamente',
+                'data' => new TripulanteResource($tripulante)
+            ]);
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tripulante no encontrado'
+            ], 404);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al obtener tripulante',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : 'Error interno'
+            ], 500);
+        }
+    }
+
+    /**
+     * Actualizar un tripulante.
+     *
+     * @param Request $request
+     * @param int $id
+     * @return JsonResponse
+     */
+    public function update(Request $request, int $id): JsonResponse
+    {
+        try {
+            $user = $request->user();
+
+            // Buscar el tripulante
+            $query = Tripulante::query();
+
+            // Si el usuario no es admin, solo puede editar tripulantes de su aerolínea
+            if (!$user->isAdmin() && $user->id_aerolinea) {
+                $query->porAerolinea($user->id_aerolinea);
+            }
+
+            $tripulante = $query->findOrFail($id);
+
+            // Validar los datos de entrada
             $validator = Validator::make($request->all(), [
-                'device_ids' => 'required|array',
-                'device_ids.*' => [
-                    'required',
-                    'integer',
-                    function ($attribute, $value, $fail) {
-                        if (!ProFxDeviceInfo::where('DEVICE_ID', $value)->exists()) {
-                            $fail('El device_id no existe.');
-                        }
-                    }
-                ],
+                'crew_id' => 'sometimes|required|string|max:10',
+                'nombres' => 'sometimes|required|string|max:50',
+                'apellidos' => 'sometimes|required|string|max:50',
+                'pasaporte' => 'nullable|string|max:20',
+                'identidad' => 'nullable|string|max:20',
+                'posicion' => 'sometimes|required|integer|exists:posiciones,id_posicion',
+                'imagen' => 'nullable|string|max:250',
+                'iata_aerolinea' => 'sometimes|required|string|size:2',
             ]);
 
             if ($validator->fails()) {
-                return response()->json(['error' => $validator->errors()], 422);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Datos de entrada inválidos',
+                    'errors' => $validator->errors()
+                ], 422);
             }
 
-            $deviceIds = $request->device_ids;
-            $resultadosLimpieza = [];
+            // Verificar unicidad del crew_id si se está actualizando
+            if ($request->filled('crew_id') && $request->crew_id !== $tripulante->crew_id) {
+                $existeTripulante = Tripulante::where('crew_id', $request->crew_id)
+                    ->where('id_aerolinea', $tripulante->id_aerolinea)
+                    ->where('id_tripulante', '!=', $id)
+                    ->exists();
 
-            // Usar DEVICE_ID en lugar de ID
-            $dispositivosInfo = ProFxDeviceInfo::whereIn('DEVICE_ID', $deviceIds)->get();
-
-            if ($dispositivosInfo->isEmpty()) {
-                return response()->json(['error' => 'No se encontraron dispositivos válidos para limpiar.'], 400);
-            }
-
-            foreach ($dispositivosInfo as $dispositivo) {
-                $deviceSn = $dispositivo->DEVICE_SN;
-                $tablasBorradas = 0;
-                $tablasFallidas = 0;
-
-                // Mapeo de modelos a nombres de tabla explícitos
-                // Este mapeo sobrescribe lo que devuelve getTable() si es necesario
-                $modelosTablas = [
-                    'ProFxAdvInfo' => null, // null significa usar getTable() del modelo
-                    'ProFxAttLog' => null,
-                    'ProFxAttPhoto' => null,
-                    'ProFxDeviceAttrs' => null,
-                    'ProFxMeetInfo' => 'proface_x_meet_info', // Forzar este nombre específico
-                    'ProFxMessage' => null,
-                    'ProFxUserInfo' => null,
-                    'ProFxPersBioTemplate' => null,
-                ];
-
-                $errores = [];
-
-                // Optimizacion: Ejecutar en transacción para mejorar rendimiento
-                DB::beginTransaction();
-
-                try {
-                    // Procesar cada modelo con manejo de errores individual
-                    foreach ($modelosTablas as $nombreModelo => $nombreTablaExplicito) {
-                        try {
-                            $nombreClaseCompleto = 'App\\Models\\ZKTeco\\ProFaceX\\' . $nombreModelo;
-
-                            if (!class_exists($nombreClaseCompleto)) {
-                                $errores[$nombreModelo] = "Clase {$nombreClaseCompleto} no existe";
-                                $tablasFallidas++;
-                                continue;
-                            }
-
-                            $instanciaModelo = new $nombreClaseCompleto();
-
-                            // Usar nombre explícito si se proporcionó, o el del modelo
-                            $nombreTabla = $nombreTablaExplicito ?: $instanciaModelo->getTable();
-
-                            // Usar Query Builder para más control
-                            $numFilasBorradas = DB::table($nombreTabla)
-                                ->where('DEVICE_SN', '=', $deviceSn)
-                                ->delete();
-
-                            $tablasBorradas++;
-
-                        } catch (\Exception $e) {
-                            $errores[$nombreModelo] = $e->getMessage();
-                            $tablasFallidas++;
-                        }
-                    }
-
-                    DB::commit();
-                } catch (\Exception $e) {
-                    DB::rollback();
-                    throw $e;
+                if ($existeTripulante) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Ya existe un tripulante con este crew_id en la aerolínea'
+                    ], 422);
                 }
-
-                // Crear comando para limpiar todos los datos en el dispositivo físico
-                ManagerFactory::getCommandManager()->createClearAllDataCommand($deviceSn);
-
-                // Ejecutar comandos para este dispositivo
-                $this->executeDeviceCommands($deviceSn);
-
-                $resultadosLimpieza[] = [
-                    'device_id' => $dispositivo->DEVICE_ID,
-                    'device_sn' => $deviceSn,
-                    'status' => 'clear_commands_executed',
-                    'tablas_borradas' => $tablasBorradas,
-                    'tablas_con_error' => $tablasFallidas
-                ];
             }
+
+            // Actualizar el tripulante
+            DB::beginTransaction();
+
+            $tripulante->update($request->only([
+                'crew_id',
+                'nombres',
+                'apellidos',
+                'pasaporte',
+                'identidad',
+                'posicion',
+                'imagen',
+                'iata_aerolinea',
+            ]));
+
+            DB::commit();
+
+            // Cargar las relaciones
+            $tripulante->load(['aerolinea', 'posicionModel']);
 
             return response()->json([
-                'message' => 'Datos locales eliminados y comandos de limpieza ejecutados en los dispositivos.',
-                'results' => $resultadosLimpieza
+                'success' => true,
+                'message' => 'Tripulante actualizado exitosamente',
+                'data' => new TripulanteResource($tripulante)
             ]);
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tripulante no encontrado'
+            ], 404);
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al actualizar tripulante',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : 'Error interno'
+            ], 500);
+        }
+    }
+
+    /**
+     * Eliminar un tripulante.
+     *
+     * @param Request $request
+     * @param int $id
+     * @return JsonResponse
+     */
+    public function destroy(Request $request, int $id): JsonResponse
+    {
+        try {
+            $user = $request->user();
+
+            // Solo admin puede eliminar tripulantes
+            if (!$user->isAdmin()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No tienes permisos para eliminar tripulantes'
+                ], 403);
+            }
+
+            // Buscar el tripulante
+            $tripulante = Tripulante::findOrFail($id);
+
+            DB::beginTransaction();
+
+            $tripulante->delete();
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Tripulante eliminado exitosamente'
+            ]);
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tripulante no encontrado'
+            ], 404);
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al eliminar tripulante',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : 'Error interno'
+            ], 500);
+        }
+    }
+
+    /**
+     * Obtener todas las posiciones disponibles.
+     *
+     * @return JsonResponse
+     */
+    public function posiciones(): JsonResponse
+    {
+        try {
+            $posiciones = Posicion::orderBy('descripcion')->get();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Posiciones obtenidas exitosamente',
+                'data' => PosicionResource::collection($posiciones)
+            ]);
+
         } catch (\Exception $e) {
             return response()->json([
-                'error' => 'Ha ocurrido un error al limpiar los dispositivos.',
-                'details' => $e->getMessage()
+                'success' => false,
+                'message' => 'Error al obtener posiciones',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : 'Error interno'
             ], 500);
         }
     }
