@@ -8,6 +8,7 @@ use App\Models\Tripulante;
 use App\Models\ZKTeco\ProFaceX\ProFxAttLog;
 use App\Models\ZKTeco\ProFaceX\ProFxDeviceInfo;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
 class MarcacionesServices
@@ -31,6 +32,7 @@ class MarcacionesServices
                 // Valores por defecto
                 $id_planificacion_para_esta_marcacion = 0;
                 $crew_id_del_tripulante = null;
+                $punto_control = null;
 
                 // Obtención de datos del tripulante
                 $tripulante = Tripulante::where('id_tripulante', $id_tripulante_from_pin)->first();
@@ -62,13 +64,24 @@ class MarcacionesServices
                     }
                 }
 
-                // Obtención del lugar de marcación
+                // Obtención del lugar de marcación y punto de control
                 $deviceSn = $proFxAttLog->DEVICE_SN;
                 $lugarMarcacionDeterminado = $deviceSn; // Valor por defecto
+                $deviceId = null;
 
                 $deviceInfo = ProFxDeviceInfo::where('DEVICE_SN', $deviceSn)->first();
                 if ($deviceInfo && $deviceInfo->DEVICE_ID) {
-                    $lugarMarcacionDeterminado = $deviceInfo->DEVICE_ID;
+                    $deviceId = $deviceInfo->DEVICE_ID;
+                    $lugarMarcacionDeterminado = $deviceId;
+
+                    // Buscar el punto de control asociado al dispositivo
+                    $dispositivoPunto = DB::table('dispositivos_puntos')
+                        ->where('id_device', $deviceId)
+                        ->first();
+
+                    if ($dispositivoPunto) {
+                        $punto_control = $dispositivoPunto->id_punto;
+                    }
                 }
 
                 // Guardar la nueva marcación
@@ -79,6 +92,7 @@ class MarcacionesServices
                 $marcacion->fecha_marcacion = $fechaMarcacionActual;
                 $marcacion->hora_marcacion = $horaMarcacionActual;
                 $marcacion->lugar_marcacion = $lugarMarcacionDeterminado;
+                $marcacion->punto_control = $punto_control;
                 $marcacion->save();
 
             } catch (\Exception $e) {

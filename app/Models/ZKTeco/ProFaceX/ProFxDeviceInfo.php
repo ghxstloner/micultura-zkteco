@@ -2,6 +2,7 @@
 
 namespace App\Models\ZKTeco\ProFaceX;
 
+use Backpack\CRUD\app\Models\Traits\CrudTrait;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
