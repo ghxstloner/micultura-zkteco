@@ -5,9 +5,12 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Laravel\Sanctum\HasApiTokens; // ← AGREGAR ESTA LÍNEA
 
 class SecUser extends Authenticatable
 {
+    use HasApiTokens; // ← AGREGAR ESTA LÍNEA
+
     /**
      * La tabla asociada con el modelo.
      */
