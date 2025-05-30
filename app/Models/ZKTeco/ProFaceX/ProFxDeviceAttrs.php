@@ -2,7 +2,9 @@
 
 namespace App\Models\ZKTeco\ProFaceX;
 
-class ProFxDeviceAttrs extends ProFxModel
+use Illuminate\Database\Eloquent\Model;
+
+class ProFxDeviceAttrs extends Model
 {
     /*
     |--------------------------------------------------------------------------

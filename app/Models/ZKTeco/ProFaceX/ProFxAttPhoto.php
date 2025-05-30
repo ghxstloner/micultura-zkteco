@@ -2,7 +2,9 @@
 
 namespace App\Models\ZKTeco\ProFaceX;
 
-class ProFxAttPhoto extends ProFxModel
+use Illuminate\Database\Eloquent\Model;
+
+class ProFxAttPhoto extends Model
 {
     /*
     |--------------------------------------------------------------------------

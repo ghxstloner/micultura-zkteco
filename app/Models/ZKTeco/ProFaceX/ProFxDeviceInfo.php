@@ -2,14 +2,20 @@
 
 namespace App\Models\ZKTeco\ProFaceX;
 
-//use App\Models\ExpedienteMarcacion;
+use App\Models\Edificio;
+use App\Models\ExpedienteMarcacion;
+use App\Models\Provincia;
+use Backpack\CRUD\app\Models\Traits\CrudTrait;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 
 /** @property string $DEVICE_SN */
-class ProFxDeviceInfo extends ProFxModel
+class ProFxDeviceInfo extends Model
 {
+    use CrudTrait;
+
     /*
     |--------------------------------------------------------------------------
     | GLOBAL VARIABLES
@@ -72,10 +78,20 @@ class ProFxDeviceInfo extends ProFxModel
     |--------------------------------------------------------------------------
     */
 
-//    public function marcaciones()
-//    {
-//        return $this->hasMany(ExpedienteMarcacion::class, 'device_id', 'DEVICE_ID');
-//    }
+    public function provincia()
+    {
+        return $this->belongsTo(Provincia::class);
+    }
+
+    public function edificio()
+    {
+        return $this->belongsTo(Edificio::class);
+    }
+
+    public function marcaciones()
+    {
+        return $this->hasMany(ExpedienteMarcacion::class, 'device_id', 'DEVICE_ID');
+    }
 
     /*
     |--------------------------------------------------------------------------

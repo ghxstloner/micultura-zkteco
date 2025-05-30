@@ -2,7 +2,9 @@
 
 namespace App\Models\ZKTeco\ProFaceX;
 
-class ProFxDeviceCommand extends ProFxModel
+use Illuminate\Database\Eloquent\Model;
+
+class ProFxDeviceCommand extends Model
 {
     /*
     |--------------------------------------------------------------------------

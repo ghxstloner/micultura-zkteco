@@ -2,7 +2,9 @@
 
 namespace App\Models\ZKTeco\ProFaceX;
 
-class ProFxMessage extends ProFxModel
+use Illuminate\Database\Eloquent\Model;
+
+class ProFxMessage extends Model
 {
     /*
     |--------------------------------------------------------------------------
