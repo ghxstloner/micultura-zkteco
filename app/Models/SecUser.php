@@ -70,8 +70,7 @@ class SecUser extends Authenticatable
      */
     protected $casts = [
         'pswd_last_updated' => 'datetime',
-        'mfa_last_updated' => 'datetime',
-        'picture' => 'binary',
+        'mfa_last_updated' => 'datetime'
     ];
 
     /**
