@@ -2,7 +2,6 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\TripulanteApiController;
-use App\Http\Controllers\Api\TripulanteController;
 use App\Http\Controllers\Api\DispositivosApiController;
 use Illuminate\Support\Facades\Route;
 
@@ -41,14 +40,14 @@ Route::middleware(['auth:sanctum'])->group(function () {
     // === Rutas de Gestión de Tripulantes (CRUD) ===
     Route::prefix('crew')->group(function () {
         // CRUD básico de tripulantes
-        Route::get('/', [TripulanteController::class, 'index']);
-        Route::post('/', [TripulanteController::class, 'store']);
-        Route::get('/{id}', [TripulanteController::class, 'show']);
-        Route::put('/{id}', [TripulanteController::class, 'update']);
-        Route::delete('/{id}', [TripulanteController::class, 'destroy']);
+        Route::get('/', [TripulanteApiController::class, 'index']);
+        Route::post('/', [TripulanteApiController::class, 'store']);
+        Route::get('/{id}', [TripulanteApiController::class, 'show']);
+        Route::put('/{id}', [TripulanteApiController::class, 'update']);
+        Route::delete('/{id}', [TripulanteApiController::class, 'destroy']);
 
         // Endpoints adicionales
-        Route::get('/posiciones/lista', [TripulanteController::class, 'posiciones']);
+        Route::get('/posiciones/lista', [TripulanteApiController::class, 'posiciones']);
     });
 
 });
