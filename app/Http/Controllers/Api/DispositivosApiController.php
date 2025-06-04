@@ -14,6 +14,7 @@ use App\Models\ZKTeco\ProFaceX\ProFxMessage;
 use App\Models\ZKTeco\ProFaceX\ProFxPersBioTemplate;
 use App\Services\ZKTeco\ProFaceX\Manager\ManagerFactory;
 use App\Services\ZKTeco\ProFaceX\DevCmdUtil;
+use App\Services\ZKTecoSyncService; // ✅ NUEVO
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -24,6 +25,7 @@ class DispositivosApiController extends Controller
 {
     /**
      * Recibe datos de una persona y los envía a los dispositivos ZKTeco.
+     * ✅ REFACTORIZADO: Ahora usa ZKTecoSyncService para mayor consistencia
      *
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse
@@ -43,21 +45,57 @@ class DispositivosApiController extends Controller
         }
 
         try {
+            // Si hay foto como archivo, procesarla directamente (método original)
+            if ($request->hasFile('foto')) {
+                return $this->procesarImagenDirecta($request);
+            }
+
+            // Si no hay foto, crear objeto tripulante temporal y usar el servicio
+            $tripulanteTemp = (object) [
+                'id_tripulante' => $request->id_tripulante,
+                'crew_id' => $request->id_tripulante,
+                'nombres' => $request->nombres,
+                'apellidos' => $request->apellidos,
+                'imagen' => null, // No tiene imagen en FTP
+                'iata_aerolinea' => null,
+            ];
+
+            $zktecoService = new ZKTecoSyncService();
+            $resultado = $zktecoService->enviarTripulante($tripulanteTemp);
+
+            return response()->json($resultado);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Error al procesar y enviar datos de persona',
+                'details' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Procesar imagen directa cuando viene como archivo en la request.
+     * ✅ Mantiene la lógica original para cuando la imagen viene como archivo
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    private function procesarImagenDirecta(Request $request)
+    {
+        try {
             $fotoBase64 = null;
             $fotoSize = null;
             $fotoNombreParaDispositivo = null;
 
-            if ($request->hasFile('foto')) {
-                $foto = $request->file('foto');
-                $fotoContent = file_get_contents($foto->getRealPath());
+            $foto = $request->file('foto');
+            $fotoContent = file_get_contents($foto->getRealPath());
 
-                // Comprimir la imagen antes de convertirla a base64
-                $compressedImage = $this->compressImage($fotoContent);
+            // Comprimir la imagen antes de convertirla a base64
+            $compressedImage = $this->compressImage($fotoContent);
 
-                $fotoBase64 = base64_encode($compressedImage);
-                $fotoSize = strlen($compressedImage);
-                $fotoNombreParaDispositivo = $request->id_tripulante . ".jpg";
-            }
+            $fotoBase64 = base64_encode($compressedImage);
+            $fotoSize = strlen($compressedImage);
+            $fotoNombreParaDispositivo = $request->id_tripulante . ".jpg";
 
             $nombreCompleto = $request->nombres . ' ' . $request->apellidos;
 
@@ -74,7 +112,7 @@ class DispositivosApiController extends Controller
             $resultados = [];
 
             foreach ($dispositivosActivos as $dispositivo) {
-                // Obtener el DEV_FUNS actual del dispositivo - IMPORTANTE: Esto faltaba en el método original
+                // Obtener el DEV_FUNS actual del dispositivo
                 $devFuns = $dispositivo->DEV_FUNS;
 
                 // Buscar o crear el usuario en el dispositivo
@@ -85,7 +123,7 @@ class DispositivosApiController extends Controller
 
                 // Rellenar la información del usuario
                 $userInfo->NAME = $nombreCompleto;
-                $userInfo->MAIN_CARD = $request->id_tripulante; // Importante: se usa en el código original
+                $userInfo->MAIN_CARD = $request->id_tripulante;
 
                 if ($fotoBase64 && $fotoSize) {
                     $userInfo->PHOTO_ID_NAME = $fotoNombreParaDispositivo;
@@ -110,7 +148,7 @@ class DispositivosApiController extends Controller
                     $devFuns
                 );
 
-                // Ejecutar comandos para CADA dispositivo INMEDIATAMENTE - Como en syncDevices
+                // Ejecutar comandos para CADA dispositivo INMEDIATAMENTE
                 $this->executeDeviceCommands($dispositivo->DEVICE_SN);
 
                 $resultados[] = [
@@ -128,7 +166,7 @@ class DispositivosApiController extends Controller
 
         } catch (\Exception $e) {
             return response()->json([
-                'error' => 'Error al procesar y enviar datos de persona',
+                'error' => 'Error al procesar imagen directa',
                 'details' => $e->getMessage()
             ], 500);
         }
@@ -136,7 +174,7 @@ class DispositivosApiController extends Controller
 
     /**
      * Sincronizar todos los tripulantes con los dispositivos seleccionados.
-     * Sincroniza TODOS los tripulantes que tienen una imagen válida.
+     * ✅ REFACTORIZADO: Ahora usa ZKTecoSyncService
      *
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse
@@ -170,146 +208,11 @@ class DispositivosApiController extends Controller
                 ], 400);
             }
 
-            // Obtener dispositivos seleccionados
-            $dispositivos = ProFxDeviceInfo::whereIn('DEVICE_ID', $deviceIds)->get();
+            // Usar el servicio ZKTecoSyncService
+            $zktecoService = new ZKTecoSyncService();
+            $resultado = $zktecoService->sincronizarTripulantesADispositivos($deviceIds);
 
-            if ($dispositivos->isEmpty()) {
-                return response()->json([
-                    'error' => 'No se encontraron dispositivos válidos para sincronizar.'
-                ], 400);
-            }
-
-            // Obtener la URL base desde las variables de entorno
-            $baseUrl = env('IMAGEN_URL_BASE');
-
-            // Obtener todos los tripulantes que tienen una imagen asignada - Optimización: seleccionar solo columnas necesarias
-            $tripulantes = DB::table('tripulantes')
-                ->whereNotNull('imagen')
-                ->whereNotNull('iata_aerolinea')
-                ->whereNotNull('crew_id')
-                ->select('id_tripulante', 'nombres', 'apellidos', 'imagen', 'iata_aerolinea', 'crew_id')
-                ->get();
-
-            if ($tripulantes->isEmpty()) {
-                return response()->json([
-                    'message' => 'No hay tripulantes con imágenes para sincronizar.'
-                ], 200);
-            }
-
-            $resultadosSincronizacion = [];
-
-            // Para cada dispositivo seleccionado
-            foreach ($dispositivos as $dispositivo) {
-                $dispositivoResult = [
-                    'device_id' => $dispositivo->DEVICE_ID,
-                    'device_sn' => $dispositivo->DEVICE_SN,
-                    'usuarios_sincronizados' => 0,
-                    'usuarios_fallidos' => 0,
-                    'detalles' => []
-                ];
-
-                // Obtener el DEV_FUNS actual del dispositivo
-                $devFuns = $dispositivo->DEV_FUNS;
-                $loteUserInfos = [];
-                $loteSize = 50; // Procesar en lotes de 50 usuarios
-
-                // Para cada tripulante a sincronizar
-                foreach ($tripulantes as $index => $tripulante) {
-                    try {
-                        // Construir la URL de la imagen
-                        $imagenUrl = "{$baseUrl}/{$tripulante->iata_aerolinea}/{$tripulante->crew_id}/{$tripulante->imagen}";
-
-                        // Intentar obtener la imagen y verificar que sea válida
-                        $fotoContent = @file_get_contents($imagenUrl);
-
-                        if ($fotoContent === false) {
-                            throw new \Exception("No se pudo obtener la imagen");
-                        }
-
-                        // Verificar que el contenido sea una imagen válida - Optimización: verificación simplificada
-                        $finfo = new \finfo(FILEINFO_MIME_TYPE);
-                        $mimeType = $finfo->buffer($fotoContent);
-
-                        if (strpos($mimeType, 'image/') !== 0) {
-                            throw new \Exception("El contenido obtenido no es una imagen válida");
-                        }
-
-                        // Comprimir la imagen antes de convertirla a base64
-                        $compressedImage = $this->compressImage($fotoContent);
-
-                        $fotoBase64 = base64_encode($compressedImage);
-                        $fotoSize = strlen($compressedImage);
-                        $fotoNombreParaDispositivo = $tripulante->id_tripulante . ".jpg";
-
-                        // Buscar o crear el userInfo en el dispositivo destino
-                        $userInfo = ProFxUserInfo::firstOrNew([
-                            'USER_PIN' => $tripulante->id_tripulante,
-                            'DEVICE_SN' => $dispositivo->DEVICE_SN
-                        ]);
-
-                        // Rellenar la información del usuario
-                        $userInfo->NAME = $tripulante->nombres . ' ' . $tripulante->apellidos;
-                        $userInfo->MAIN_CARD = $tripulante->id_tripulante;
-                        $userInfo->PHOTO_ID_NAME = $fotoNombreParaDispositivo;
-                        $userInfo->PHOTO_ID_SIZE = $fotoSize;
-                        $userInfo->PHOTO_ID_CONTENT = $fotoBase64;
-
-                        // Valores predeterminados
-                        $userInfo->PASSWORD = "";
-                        $userInfo->FACE_GROUP_ID = 0;
-                        $userInfo->ACC_GROUP_ID = 0;
-                        $userInfo->DEPT_ID = 0;
-                        $userInfo->IS_GROUP_TZ = 0;
-                        $userInfo->VERIFY_TYPE = 0;
-                        $userInfo->category = 0;
-                        $userInfo->PRIVILEGE = 0;
-
-                        $userInfo->save();
-
-                        // Añadir a la cola de procesamiento por lotes
-                        $loteUserInfos[] = $userInfo;
-
-                        // Procesar en lotes para mejorar rendimiento
-                        if (count($loteUserInfos) >= $loteSize || $index == count($tripulantes) - 1) {
-                            // Procesar lote actual de usuarios
-                            foreach ($loteUserInfos as $info) {
-                                ManagerFactory::getCommandManager()->createUpdateUserInfosCommandByIds(
-                                    $info,
-                                    $devFuns
-                                );
-                            }
-
-                            // Reiniciar el lote
-                            $loteUserInfos = [];
-                        }
-
-                        $dispositivoResult['usuarios_sincronizados']++;
-
-                    } catch (\Exception $e) {
-                        // Registrar el error pero continuar con el siguiente tripulante
-                        $dispositivoResult['usuarios_fallidos']++;
-
-                        // Añadir detalles del error para diagnóstico
-                        $dispositivoResult['detalles'][] = [
-                            'tripulante_id' => $tripulante->id_tripulante,
-                            'error' => $e->getMessage(),
-                        ];
-
-                        // También registrar en log
-                        Log::error("Error sincronizando tripulante ID: {$tripulante->id_tripulante} - Error: {$e->getMessage()}");
-                    }
-                }
-
-                // Ejecutar comandos para este dispositivo una sola vez al final
-                $this->executeDeviceCommands($dispositivo->DEVICE_SN);
-
-                $resultadosSincronizacion[] = $dispositivoResult;
-            }
-
-            return response()->json([
-                'message' => 'Proceso de sincronización completado para los dispositivos seleccionados.',
-                'results' => $resultadosSincronizacion
-            ]);
+            return response()->json($resultado);
 
         } catch (\Exception $e) {
             return response()->json([
@@ -331,12 +234,10 @@ class DispositivosApiController extends Controller
             $commands = $commandManager->getDeviceCommandListToDevice($deviceSn);
 
             if ($commands->isEmpty()) {
-
                 return;
             }
 
             foreach ($commands as $command) {
-
                 $command->CMD_TRANS_TIMES = now();
                 $commandManager->updateDeviceCommand([$command]);
 
@@ -346,8 +247,6 @@ class DispositivosApiController extends Controller
                 // $command->CMD_RETURN_INFO = $result['info'];
                 $command->CMD_OVER_TIME = now();
                 $commandManager->updateDeviceCommand([$command]);
-
-
             }
 
             ManagerFactory::getDeviceManager()->updateDeviceState($deviceSn, 'Online', now());
@@ -473,9 +372,8 @@ class DispositivosApiController extends Controller
                 $tablasFallidas = 0;
 
                 // Mapeo de modelos a nombres de tabla explícitos
-                // Este mapeo sobrescribe lo que devuelve getTable() si es necesario
                 $modelosTablas = [
-                    'ProFxAdvInfo' => null, // null significa usar getTable() del modelo
+                    'ProFxAdvInfo' => null,
                     'ProFxAttLog' => null,
                     'ProFxAttPhoto' => null,
                     'ProFxDeviceAttrs' => null,

@@ -7,6 +7,7 @@ use App\Http\Resources\TripulanteResource;
 use App\Http\Resources\PosicionResource;
 use App\Models\Tripulante;
 use App\Models\Posicion;
+use App\Services\ZKTecoSyncService; // ✅ NUEVO
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
@@ -223,9 +224,29 @@ class TripulanteApiController extends Controller
             // Cargar las relaciones
             $tripulante->load(['aerolinea', 'posicionModel']);
 
+            // ✅ NUEVO: Enviar a dispositivos ZKTeco si tiene imagen
+            $zktecoEnviado = false;
+            if ($nombreImagen) {
+                try {
+                    $zktecoService = new ZKTecoSyncService();
+                    $resultadoZKTeco = $zktecoService->enviarTripulante($tripulante);
+
+                    // Log del resultado pero no fallar la creación
+                    if ($resultadoZKTeco['success']) {
+                        \Log::info("Tripulante {$tripulante->id_tripulante} enviado a ZKTeco exitosamente");
+                        $zktecoEnviado = true;
+                    } else {
+                        \Log::warning("Error enviando tripulante {$tripulante->id_tripulante} a ZKTeco: " . ($resultadoZKTeco['error'] ?? 'Error desconocido'));
+                    }
+                } catch (\Exception $e) {
+                    // Solo logear, no fallar la creación del tripulante
+                    \Log::error("Excepción enviando tripulante {$tripulante->id_tripulante} a ZKTeco: " . $e->getMessage());
+                }
+            }
+
             return response()->json([
                 'success' => true,
-                'message' => 'Tripulante creado exitosamente',
+                'message' => 'Tripulante creado exitosamente' . ($zktecoEnviado ? ' y enviado a dispositivos ZKTeco' : ''),
                 'data' => new TripulanteResource($tripulante)
             ], 201);
 
