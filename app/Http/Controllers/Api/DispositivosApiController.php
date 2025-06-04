@@ -293,7 +293,6 @@ class DispositivosApiController extends Controller
                         $dispositivoResult['detalles'][] = [
                             'tripulante_id' => $tripulante->id_tripulante,
                             'error' => $e->getMessage(),
-                            'trace' => $e->getTraceAsString() // Opcional: para diagnóstico detallado
                         ];
 
                         // También registrar en log

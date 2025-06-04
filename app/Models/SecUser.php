@@ -48,7 +48,7 @@ class SecUser extends Authenticatable
         'activation_code',
         'priv_admin',
         'mfa',
-        'picture',
+        //'picture',
         'role',
         'phone',
         'pswd_last_updated',
@@ -156,11 +156,11 @@ class SecUser extends Authenticatable
     /**
      * Accessor para la imagen en base64.
      */
-    public function getPictureBase64Attribute(): ?string
+    /*public function getPictureBase64Attribute(): ?string
     {
         if ($this->picture) {
             return base64_encode($this->picture);
         }
         return null;
-    }
+    }*/
 }

@@ -109,7 +109,7 @@ class TripulanteApiController extends Controller
             // Obtener el usuario autenticado
             $user = $request->user();
 
-            // Validar los datos de entrada
+            // ✅ Validación para FormData con archivo real
             $validator = Validator::make($request->all(), [
                 'crew_id' => 'required|string|max:10',
                 'nombres' => 'required|string|max:50',
@@ -117,9 +117,9 @@ class TripulanteApiController extends Controller
                 'pasaporte' => 'nullable|string|max:20',
                 'identidad' => 'nullable|string|max:20',
                 'posicion' => 'required|integer|exists:posiciones,id_posicion',
-                'imagen' => 'nullable|string|max:250',
                 'iata_aerolinea' => 'required|string|size:2',
                 'id_aerolinea' => 'nullable|integer|exists:aerolineas,id_aerolinea',
+                'image' => 'nullable|image|mimes:jpeg,jpg,png,gif|max:5120', // Max 5MB
             ]);
 
             if ($validator->fails()) {
@@ -156,6 +156,52 @@ class TripulanteApiController extends Controller
                 ], 422);
             }
 
+            // ✅ Procesar la imagen si existe
+            $nombreImagen = null;
+            if ($request->hasFile('image')) {
+                try {
+                    $archivo = $request->file('image');
+
+                    // Verificar que el archivo sea válido
+                    if (!$archivo->isValid()) {
+                        throw new \Exception('Archivo de imagen inválido');
+                    }
+
+                    // Generar nombre del archivo
+                    $extension = $archivo->getClientOriginalExtension();
+                    $nombreArchivo = 'foto.' . $extension; // Nombre estándar con extensión original
+
+                    // Crear directorio en formato: {iata}/{crew_id}/
+                    $directorio = $request->iata_aerolinea . '/' . $request->crew_id;
+                    $rutaCompleta = $directorio . '/' . $nombreArchivo;
+
+                    // ✅ Guardar vía FTP al servidor echcarst
+                    $disk = \Storage::disk('crew_images');
+
+                    // Crear directorio si no existe
+                    $disk->makeDirectory($directorio);
+
+                    // Leer contenido del archivo y guardarlo
+                    $contenidoArchivo = file_get_contents($archivo->getPathname());
+                    $guardado = $disk->put($rutaCompleta, $contenidoArchivo);
+
+                    if (!$guardado) {
+                        throw new \Exception('Error al guardar imagen en servidor remoto');
+                    }
+
+                    $nombreImagen = $nombreArchivo; // Solo el nombre del archivo para la DB
+
+                    \Log::info("Imagen guardada exitosamente: {$rutaCompleta}");
+
+                } catch (\Exception $e) {
+                    \Log::error('Error al procesar imagen: ' . $e->getMessage());
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Error al procesar la imagen: ' . $e->getMessage()
+                    ], 500);
+                }
+            }
+
             // Crear el tripulante
             DB::beginTransaction();
 
@@ -168,7 +214,7 @@ class TripulanteApiController extends Controller
                 'pasaporte' => $request->pasaporte,
                 'identidad' => $request->identidad,
                 'posicion' => $request->posicion,
-                'imagen' => $request->imagen,
+                'imagen' => $nombreImagen, // ✅ Solo el nombre del archivo (ej: "foto.jpg")
                 'fecha_creacion' => now(),
             ]);
 
@@ -185,6 +231,8 @@ class TripulanteApiController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
+
+            \Log::error('Error al crear tripulante: ' . $e->getMessage());
 
             return response()->json([
                 'success' => false,
