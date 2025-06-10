@@ -17,31 +17,29 @@ Route::middleware([\App\Http\Middleware\ApiTokenMiddleware::class])->group(funct
 });
 
 // ============================================================================
-// NUEVAS RUTAS DE AUTENTICACIÓN (SIN AUTENTICACIÓN REQUERIDA)
+// RUTAS PÚBLICAS (SIN AUTENTICACIÓN - PARA REGISTRO Y LOGIN)
 // ============================================================================
 
+// Rutas de autenticación públicas
 Route::prefix('auth')->group(function () {
     Route::post('/login', [AuthController::class, 'login']);
+    Route::post('/register', [AuthController::class, 'register']); // ← ESTA FALTABA
+    Route::post('/check-status', [AuthController::class, 'checkStatus']);
 });
 
-// ============================================================================
-// RUTAS PÚBLICAS (SIN AUTENTICACIÓN - PARA REGISTRO)
-// ============================================================================
-
 // Posiciones disponibles (necesario para el registro)
-Route::get('/posiciones', [TripulanteApiController::class, 'posiciones']);
+Route::get('/posiciones', [AuthController::class, 'posiciones']); // Cambié el controlador
 
 // ============================================================================
-// NUEVAS RUTAS PROTEGIDAS POR SANCTUM (REQUIEREN AUTENTICACIÓN)
+// RUTAS PROTEGIDAS POR SANCTUM (REQUIEREN AUTENTICACIÓN)
 // ============================================================================
 
 Route::middleware(['auth:sanctum'])->group(function () {
 
-    // === Rutas de Autenticación ===
+    // === Rutas de Autenticación Protegidas ===
     Route::prefix('auth')->group(function () {
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::get('/me', [AuthController::class, 'me']);
-        Route::post('/refresh', [AuthController::class, 'refresh']);
     });
 
     // === Rutas de Gestión de Tripulantes (CRUD) ===

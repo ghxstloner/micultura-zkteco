@@ -318,7 +318,7 @@ class AuthController extends Controller
     }
 
     /**
-     * Obtener todas las posiciones disponibles.
+     * Obtener todas las posiciones disponibles (PÚBLICO - NECESARIO PARA REGISTRO).
      *
      * @return JsonResponse
      */
@@ -340,6 +340,8 @@ class AuthController extends Controller
             ]);
 
         } catch (\Exception $e) {
+            \Log::error('Error al obtener posiciones: ' . $e->getMessage());
+
             return response()->json([
                 'success' => false,
                 'message' => 'Error al obtener posiciones',
@@ -392,6 +394,8 @@ class AuthController extends Controller
             ]);
 
         } catch (\Exception $e) {
+            \Log::error('Error al verificar estado: ' . $e->getMessage());
+
             return response()->json([
                 'success' => false,
                 'message' => 'Error al verificar estado',
