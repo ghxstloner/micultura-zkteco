@@ -25,6 +25,13 @@ Route::prefix('auth')->group(function () {
 });
 
 // ============================================================================
+// RUTAS PÚBLICAS (SIN AUTENTICACIÓN - PARA REGISTRO)
+// ============================================================================
+
+// Posiciones disponibles (necesario para el registro)
+Route::get('/posiciones', [TripulanteApiController::class, 'posiciones']);
+
+// ============================================================================
 // NUEVAS RUTAS PROTEGIDAS POR SANCTUM (REQUIEREN AUTENTICACIÓN)
 // ============================================================================
 
@@ -45,9 +52,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/{id}', [TripulanteApiController::class, 'show']);
         Route::put('/{id}', [TripulanteApiController::class, 'update']);
         Route::delete('/{id}', [TripulanteApiController::class, 'destroy']);
-
-        // Endpoints adicionales
-        Route::get('/posiciones/lista', [TripulanteApiController::class, 'posiciones']);
     });
 
 });
