@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\TripulanteSolicitud;
 use App\Models\Posicion;
+use App\Models\Aerolinea;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
@@ -31,6 +32,7 @@ class AuthController extends Controller
                 'apellidos' => 'required|string|max:50',
                 'pasaporte' => 'required|string|max:20|unique:tripulantes_solicitudes,pasaporte',
                 'identidad' => 'nullable|string|max:20',
+                'iata_aerolinea' => 'required|string|max:10|exists:aerolineas,siglas', // ← NUEVO CAMPO
                 'posicion' => 'required|integer|exists:posiciones,id_posicion',
                 'password' => 'required|string|min:6',
                 'image' => 'nullable|image|mimes:jpeg,jpg,png,gif|max:5120', // Max 5MB
@@ -94,6 +96,7 @@ class AuthController extends Controller
                 'apellidos' => $request->apellidos,
                 'pasaporte' => $request->pasaporte,
                 'identidad' => $request->identidad,
+                'iata_aerolinea' => $request->iata_aerolinea, // ← NUEVO CAMPO
                 'posicion' => $request->posicion,
                 'imagen' => $nombreImagen,
                 'password' => Hash::make($request->password),
@@ -217,6 +220,7 @@ class AuthController extends Controller
                         'nombres_apellidos' => $tripulante->nombres_apellidos,
                         'pasaporte' => $tripulante->pasaporte,
                         'identidad' => $tripulante->identidad,
+                        'iata_aerolinea' => $tripulante->iata_aerolinea, // ← INCLUIR EN RESPUESTA
                         'posicion' => [
                             'id_posicion' => $tripulante->posicionModel->id_posicion,
                             'codigo_posicion' => $tripulante->posicionModel->codigo_posicion,
@@ -295,6 +299,7 @@ class AuthController extends Controller
                     'nombres_apellidos' => $tripulante->nombres_apellidos,
                     'pasaporte' => $tripulante->pasaporte,
                     'identidad' => $tripulante->identidad,
+                    'iata_aerolinea' => $tripulante->iata_aerolinea, // ← INCLUIR
                     'posicion' => [
                         'id_posicion' => $tripulante->posicionModel->id_posicion,
                         'codigo_posicion' => $tripulante->posicionModel->codigo_posicion,
@@ -345,6 +350,39 @@ class AuthController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Error al obtener posiciones',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : 'Error interno'
+            ], 500);
+        }
+    }
+
+    /**
+     * Obtener todas las aerolíneas disponibles (PÚBLICO - NECESARIO PARA REGISTRO).
+     *
+     * @return JsonResponse
+     */
+    public function aerolineas(): JsonResponse
+    {
+        try {
+            $aerolineas = Aerolinea::orderBy('descripcion')->get();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Aerolíneas obtenidas exitosamente',
+                'data' => $aerolineas->map(function ($aerolinea) {
+                    return [
+                        'id_aerolinea' => $aerolinea->id_aerolinea,
+                        'descripcion' => $aerolinea->descripcion,
+                        'siglas' => $aerolinea->siglas,
+                    ];
+                })
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error al obtener aerolíneas: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al obtener aerolíneas',
                 'error' => env('APP_DEBUG') ? $e->getMessage() : 'Error interno'
             ], 500);
         }

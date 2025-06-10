@@ -23,12 +23,13 @@ Route::middleware([\App\Http\Middleware\ApiTokenMiddleware::class])->group(funct
 // Rutas de autenticación públicas
 Route::prefix('auth')->group(function () {
     Route::post('/login', [AuthController::class, 'login']);
-    Route::post('/register', [AuthController::class, 'register']); // ← ESTA FALTABA
+    Route::post('/register', [AuthController::class, 'register']);
     Route::post('/check-status', [AuthController::class, 'checkStatus']);
 });
 
-// Posiciones disponibles (necesario para el registro)
-Route::get('/posiciones', [AuthController::class, 'posiciones']); // Cambié el controlador
+// Datos públicos necesarios para el registro
+Route::get('/posiciones', [AuthController::class, 'posiciones']);
+Route::get('/aerolineas', [AuthController::class, 'aerolineas']); // ← NUEVA
 
 // ============================================================================
 // RUTAS PROTEGIDAS POR SANCTUM (REQUIEREN AUTENTICACIÓN)
@@ -42,9 +43,20 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/me', [AuthController::class, 'me']);
     });
 
-    // === Rutas de Gestión de Tripulantes (CRUD) ===
+    // === Rutas específicas para Tripulantes ===
+    Route::prefix('tripulante')->group(function () {
+        // Planificaciones del tripulante
+        Route::get('/planificaciones', [TripulanteApiController::class, 'getPlanificaciones']);
+        Route::get('/planificaciones/{id}', [TripulanteApiController::class, 'getPlanificacion']);
+
+        // Perfil del tripulante
+        Route::get('/profile', [TripulanteApiController::class, 'getProfile']);
+        Route::put('/profile', [TripulanteApiController::class, 'updateProfile']);
+        Route::post('/change-password', [TripulanteApiController::class, 'changePassword']);
+    });
+
+    // === Rutas de Gestión de Tripulantes (CRUD - Para administradores) ===
     Route::prefix('crew')->group(function () {
-        // CRUD básico de tripulantes
         Route::get('/', [TripulanteApiController::class, 'index']);
         Route::post('/', [TripulanteApiController::class, 'store']);
         Route::get('/{id}', [TripulanteApiController::class, 'show']);
