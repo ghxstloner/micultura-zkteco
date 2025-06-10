@@ -3,178 +3,90 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Auth\User as Authenticatable;
-use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
-use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 
 class TripulanteSolicitud extends Authenticatable
 {
-    use HasApiTokens, HasFactory, Notifiable;
+    use HasFactory, HasApiTokens;
 
     protected $table = 'tripulantes_solicitudes';
     protected $primaryKey = 'id_solicitud';
-    public $incrementing = true;
+    public $timestamps = true;
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var array<int, string>
-     */
     protected $fillable = [
         'crew_id',
         'nombres',
         'apellidos',
         'pasaporte',
         'identidad',
+        'iata_aerolinea', // ← IMPORTANTE: Debe estar aquí
         'posicion',
         'imagen',
+        'password',
         'estado',
         'activo',
-        'password',
         'fecha_solicitud',
         'fecha_aprobacion',
         'motivo_rechazo',
         'aprobado_por',
+        'rechazado_por',
     ];
 
-    /**
-     * The attributes that should be hidden for serialization.
-     *
-     * @var array<int, string>
-     */
     protected $hidden = [
         'password',
         'remember_token',
     ];
 
-    /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
-    protected function casts(): array
-    {
-        return [
-            'email_verified_at' => 'datetime',
-            'fecha_solicitud' => 'datetime',
-            'fecha_aprobacion' => 'datetime',
-            'password' => 'hashed',
-            'activo' => 'boolean',
-        ];
-    }
+    protected $casts = [
+        'fecha_solicitud' => 'datetime',
+        'fecha_aprobacion' => 'datetime',
+        'activo' => 'boolean',
+        'email_verified_at' => 'datetime',
+        'password' => 'hashed',
+    ];
 
-    /**
-     * Constantes para estados
-     */
-    const ESTADO_PENDIENTE = 'Pendiente';
-    const ESTADO_APROBADO = 'Aprobado';
-    const ESTADO_DENEGADO = 'Denegado';
-
-    /**
-     * Relación con posición
-     */
-    public function posicionModel()
-    {
-        return $this->belongsTo(Posicion::class, 'posicion', 'id_posicion');
-    }
-
-    /**
-     * Accessor para nombre completo
-     */
+    // Accessors
     public function getNombresApellidosAttribute()
     {
         return $this->nombres . ' ' . $this->apellidos;
     }
 
-    /**
-     * Accessor para imagen URL
-     */
-    public function getImagenUrlAttribute()
+    public function getImagenUrlAttribute(): ?string
     {
-        if (!$this->imagen) {
-            return null;
+        if ($this->imagen && $this->iata_aerolinea && $this->crew_id) {
+            $baseUrl = env('IMAGEN_URL_BASE');
+            return "{$baseUrl}/{$this->iata_aerolinea}/{$this->crew_id}/{$this->imagen}";
         }
-
-        // Construir URL de imagen basada en crew_id
-        return "https://crew.amaxoniaerp.com/images/crew/{$this->crew_id}/{$this->imagen}";
+        return null;
     }
 
-    /**
-     * Verificar si está aprobado
-     */
-    public function isApproved(): bool
+    // Relaciones
+    public function posicionModel()
     {
-        return $this->estado === self::ESTADO_APROBADO;
+        return $this->belongsTo(Posicion::class, 'posicion', 'id_posicion');
     }
 
-    /**
-     * Verificar si está pendiente
-     */
-    public function isPending(): bool
+    public function aerolinea()
     {
-        return $this->estado === self::ESTADO_PENDIENTE;
+        return $this->belongsTo(Aerolinea::class, 'iata_aerolinea', 'siglas');
     }
 
-    /**
-     * Verificar si está denegado
-     */
-    public function isDenied(): bool
-    {
-        return $this->estado === self::ESTADO_DENEGADO;
-    }
-
-    /**
-     * Verificar si está activo
-     */
-    public function isActive(): bool
-    {
-        return $this->activo;
-    }
-
-    /**
-     * Aprobar solicitud
-     */
-    public function approve($approvedBy = null)
-    {
-        $this->update([
-            'estado' => self::ESTADO_APROBADO,
-            'fecha_aprobacion' => now(),
-            'aprobado_por' => $approvedBy,
-            'motivo_rechazo' => null,
-        ]);
-    }
-
-    /**
-     * Denegar solicitud
-     */
-    public function deny($reason = null, $deniedBy = null)
-    {
-        $this->update([
-            'estado' => self::ESTADO_DENEGADO,
-            'motivo_rechazo' => $reason,
-            'aprobado_por' => $deniedBy,
-            'fecha_aprobacion' => null,
-        ]);
-    }
-
-    /**
-     * Scopes
-     */
+    // Scopes necesarios
     public function scopePendientes($query)
     {
-        return $query->where('estado', self::ESTADO_PENDIENTE);
+        return $query->where('estado', 'Pendiente');
     }
 
     public function scopeAprobados($query)
     {
-        return $query->where('estado', self::ESTADO_APROBADO);
+        return $query->where('estado', 'Aprobado');
     }
 
     public function scopeDenegados($query)
     {
-        return $query->where('estado', self::ESTADO_DENEGADO);
+        return $query->where('estado', 'Denegado');
     }
 
     public function scopeActivos($query)
@@ -190,5 +102,43 @@ class TripulanteSolicitud extends Authenticatable
               ->orWhere('crew_id', 'like', "%{$search}%")
               ->orWhere('pasaporte', 'like', "%{$search}%");
         });
+    }
+
+    // Métodos de estado
+    public function isPending()
+    {
+        return $this->estado === 'Pendiente';
+    }
+
+    public function isApproved()
+    {
+        return $this->estado === 'Aprobado';
+    }
+
+    public function isDenied()
+    {
+        return $this->estado === 'Denegado';
+    }
+
+    public function approve($approvedBy = null)
+    {
+        $this->update([
+            'estado' => 'Aprobado',
+            'activo' => true,
+            'fecha_aprobacion' => now(),
+            'aprobado_por' => $approvedBy,
+            'motivo_rechazo' => null,
+        ]);
+    }
+
+    public function deny($reason, $deniedBy = null)
+    {
+        $this->update([
+            'estado' => 'Denegado',
+            'activo' => false,
+            'fecha_aprobacion' => null,
+            'motivo_rechazo' => $reason,
+            'rechazado_por' => $deniedBy,
+        ]);
     }
 }

@@ -72,6 +72,7 @@ class TripulanteController extends Controller
                     'nombres_apellidos' => $solicitud->nombres_apellidos,
                     'pasaporte' => $solicitud->pasaporte,
                     'identidad' => $solicitud->identidad,
+                    'iata_aerolinea' => $solicitud->iata_aerolinea,
                     'posicion_info' => [
                         'id_posicion' => $solicitud->posicionModel->id_posicion,
                         'codigo_posicion' => $solicitud->posicionModel->codigo_posicion,
@@ -131,6 +132,7 @@ class TripulanteController extends Controller
                     'nombres_apellidos' => $solicitud->nombres_apellidos,
                     'pasaporte' => $solicitud->pasaporte,
                     'identidad' => $solicitud->identidad,
+                    'iata_aerolinea' => $solicitud->iata_aerolinea,
                     'posicion_info' => [
                         'id_posicion' => $solicitud->posicionModel->id_posicion,
                         'codigo_posicion' => $solicitud->posicionModel->codigo_posicion,
@@ -185,8 +187,8 @@ class TripulanteController extends Controller
 
             // Crear registro en la tabla tripulantes
             $tripulante = Tripulante::create([
-                'id_aerolinea' => null, // Ya no usamos aerolíneas
-                'iata_aerolinea' => null,
+                'id_aerolinea' => null, // Campo legacy, ya no se usa
+                'iata_aerolinea' => $solicitud->iata_aerolinea, // ← CORREGIDO: usar el de la solicitud
                 'crew_id' => $solicitud->crew_id,
                 'nombres' => $solicitud->nombres,
                 'apellidos' => $solicitud->apellidos,

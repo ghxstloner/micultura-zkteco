@@ -25,6 +25,7 @@ class Tripulante extends Model
         'posicion',
         'imagen',
         'fecha_creacion',
+        'estatus',
     ];
 
     /**
