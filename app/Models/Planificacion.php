@@ -3,29 +3,44 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Planificacion extends Model
 {
-    protected $table = 'planificacion'; // Nombre de tu tabla
-    protected $primaryKey = 'id'; // La PK de la tabla planificacion
-    public $timestamps = false; // Asumiendo que no tienes created_at/updated_at
+    protected $table = 'planificacion';
+    protected $primaryKey = 'id';
+    public $timestamps = false;
 
-    // Define los campos que son fillable si vas a usar create() o update() masivamente
     protected $fillable = [
         'id_aerolinea',
         'iata_aerolinea',
+        'id_aeropuerto',
         'id_tripulante',
         'crew_id',
+        'id_posicion',
         'fecha_vuelo',
         'numero_vuelo',
         'hora_vuelo',
         'estatus',
     ];
 
-    // Casting de tipos para facilitar el manejo
     protected $casts = [
         'fecha_vuelo' => 'date',
-        // 'hora_vuelo' es time(16). Laravel puede tener problemas casteando solo 'time'.
-        // Lo manejaremos como string y lo parsearemos con Carbon donde sea necesario.
     ];
+
+    // Relaciones
+    public function tripulante(): BelongsTo
+    {
+        return $this->belongsTo(Tripulante::class, 'id_tripulante', 'id_tripulante');
+    }
+
+    public function aerolinea(): BelongsTo
+    {
+        return $this->belongsTo(Aerolinea::class, 'id_aerolinea', 'id_aerolinea');
+    }
+
+    public function posicionModel(): BelongsTo
+    {
+        return $this->belongsTo(Posicion::class, 'id_posicion', 'id_posicion');
+    }
 }

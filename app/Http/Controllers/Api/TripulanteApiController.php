@@ -14,9 +14,6 @@ class TripulanteApiController extends Controller
 {
     /**
      * Obtener planificaciones del tripulante autenticado
-     *
-     * @param Request $request
-     * @return JsonResponse
      */
     public function getPlanificaciones(Request $request): JsonResponse
     {
@@ -26,29 +23,48 @@ class TripulanteApiController extends Controller
             $perPage = $request->get('per_page', 15);
             $search = $request->get('search', '');
 
-            // Construir query
-            $query = Planificacion::where('crew_id', $tripulante->crew_id)
+            // Query con datos reales de tu tabla
+            $query = Planificacion::with(['aerolinea', 'posicionModel'])
+                ->where('crew_id', $tripulante->crew_id)
                 ->orderBy('fecha_vuelo', 'desc')
-                ->orderBy('hora_salida', 'desc');
+                ->orderBy('hora_vuelo', 'desc');
 
-            // Aplicar filtro de búsqueda si existe
+            // Filtro de búsqueda solo en campos que existen
             if (!empty($search)) {
                 $query->where(function ($q) use ($search) {
                     $q->where('numero_vuelo', 'like', "%{$search}%")
-                      ->orWhere('origen', 'like', "%{$search}%")
-                      ->orWhere('destino', 'like', "%{$search}%")
-                      ->orWhere('aeronave', 'like', "%{$search}%")
-                      ->orWhere('estado', 'like', "%{$search}%");
+                      ->orWhere('crew_id', 'like', "%{$search}%")
+                      ->orWhere('iata_aerolinea', 'like', "%{$search}%");
                 });
             }
 
-            // Obtener resultados paginados
             $planificaciones = $query->paginate($perPage, ['*'], 'page', $page);
+
+            // Mapear SOLO los datos que realmente existen
+            $transformedData = $planificaciones->getCollection()->map(function ($planificacion) {
+                return [
+                    'id_planificacion' => $planificacion->id,
+                    'crew_id' => $planificacion->crew_id,
+                    'fecha_vuelo' => $planificacion->fecha_vuelo ? $planificacion->fecha_vuelo->format('Y-m-d') : null,
+                    'numero_vuelo' => $planificacion->numero_vuelo,
+                    'hora_salida' => $planificacion->hora_vuelo, // Tu campo real
+                    'estado' => $this->mapearEstatus($planificacion->estatus),
+                    'iata_aerolinea' => $planificacion->iata_aerolinea,
+                    'posicion' => $planificacion->posicionModel ? $planificacion->posicionModel->codigo_posicion : 'N/A',
+
+                    // Campos que NO existen en tu tabla - devolver null
+                    'origen' => null,
+                    'destino' => null,
+                    'hora_llegada' => null,
+                    'aeronave' => null,
+                    'observaciones' => null,
+                ];
+            });
 
             return response()->json([
                 'success' => true,
                 'message' => 'Planificaciones obtenidas exitosamente',
-                'data' => $planificaciones->items(),
+                'data' => $transformedData,
                 'pagination' => [
                     'current_page' => $planificaciones->currentPage(),
                     'total' => $planificaciones->total(),
@@ -71,18 +87,30 @@ class TripulanteApiController extends Controller
     }
 
     /**
+     * Mapear estatus real: P = Pendiente, R = Procesada
+     */
+    private function mapearEstatus($estatus)
+    {
+        switch ($estatus) {
+            case 'P':
+                return 'Pendiente';
+            case 'R':
+                return 'Procesada';
+            default:
+                return 'Desconocido';
+        }
+    }
+
+    /**
      * Obtener una planificación específica
-     *
-     * @param Request $request
-     * @param int $id
-     * @return JsonResponse
      */
     public function getPlanificacion(Request $request, int $id): JsonResponse
     {
         try {
             $tripulante = $request->user();
 
-            $planificacion = Planificacion::where('id_planificacion', $id)
+            $planificacion = Planificacion::with(['aerolinea', 'posicionModel'])
+                ->where('id', $id)
                 ->where('crew_id', $tripulante->crew_id)
                 ->first();
 
@@ -96,7 +124,23 @@ class TripulanteApiController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Planificación obtenida exitosamente',
-                'data' => $planificacion
+                'data' => [
+                    'id_planificacion' => $planificacion->id,
+                    'crew_id' => $planificacion->crew_id,
+                    'fecha_vuelo' => $planificacion->fecha_vuelo ? $planificacion->fecha_vuelo->format('Y-m-d') : null,
+                    'numero_vuelo' => $planificacion->numero_vuelo,
+                    'hora_salida' => $planificacion->hora_vuelo,
+                    'estado' => $this->mapearEstatus($planificacion->estatus),
+                    'iata_aerolinea' => $planificacion->iata_aerolinea,
+                    'posicion' => $planificacion->posicionModel ? $planificacion->posicionModel->codigo_posicion : 'N/A',
+
+                    // Campos que NO existen
+                    'origen' => null,
+                    'destino' => null,
+                    'hora_llegada' => null,
+                    'aeronave' => null,
+                    'observaciones' => null,
+                ]
             ]);
 
         } catch (\Exception $e) {
@@ -112,9 +156,6 @@ class TripulanteApiController extends Controller
 
     /**
      * Obtener perfil del tripulante
-     *
-     * @param Request $request
-     * @return JsonResponse
      */
     public function getProfile(Request $request): JsonResponse
     {
@@ -159,16 +200,12 @@ class TripulanteApiController extends Controller
 
     /**
      * Actualizar perfil del tripulante
-     *
-     * @param Request $request
-     * @return JsonResponse
      */
     public function updateProfile(Request $request): JsonResponse
     {
         try {
             $tripulante = $request->user();
 
-            // Validar datos
             $validator = Validator::make($request->all(), [
                 'nombres' => 'sometimes|required|string|max:50',
                 'apellidos' => 'sometimes|required|string|max:50',
@@ -199,7 +236,6 @@ class TripulanteApiController extends Controller
                     $directorio = $tripulante->crew_id;
                     $rutaCompleta = $directorio . '/' . $nombreArchivo;
 
-                    // Guardar nueva imagen
                     $disk = Storage::disk('crew_images');
                     $disk->makeDirectory($directorio);
 
@@ -276,16 +312,12 @@ class TripulanteApiController extends Controller
 
     /**
      * Cambiar contraseña del tripulante
-     *
-     * @param Request $request
-     * @return JsonResponse
      */
     public function changePassword(Request $request): JsonResponse
     {
         try {
             $tripulante = $request->user();
 
-            // Validar datos
             $validator = Validator::make($request->all(), [
                 'current_password' => 'required|string',
                 'new_password' => 'required|string|min:6',
@@ -299,7 +331,6 @@ class TripulanteApiController extends Controller
                 ], 422);
             }
 
-            // Verificar contraseña actual
             if (!Hash::check($request->current_password, $tripulante->password)) {
                 return response()->json([
                     'success' => false,
@@ -307,11 +338,9 @@ class TripulanteApiController extends Controller
                 ], 400);
             }
 
-            // Actualizar contraseña
             $tripulante->password = Hash::make($request->new_password);
             $tripulante->save();
 
-            // Revocar todos los tokens para forzar nuevo login
             $tripulante->tokens()->delete();
 
             return response()->json([
@@ -332,60 +361,40 @@ class TripulanteApiController extends Controller
 
     // ===== MÉTODOS PARA ADMINISTRACIÓN (CRUD) =====
 
-    /**
-     * Listar todos los tripulantes (para administradores)
-     */
     public function index(Request $request): JsonResponse
     {
-        // TODO: Implementar listado para administradores
         return response()->json([
             'success' => false,
             'message' => 'Funcionalidad no implementada'
         ], 501);
     }
 
-    /**
-     * Crear nuevo tripulante (para administradores)
-     */
     public function store(Request $request): JsonResponse
     {
-        // TODO: Implementar creación para administradores
         return response()->json([
             'success' => false,
             'message' => 'Funcionalidad no implementada'
         ], 501);
     }
 
-    /**
-     * Mostrar tripulante específico (para administradores)
-     */
     public function show(Request $request, $id): JsonResponse
     {
-        // TODO: Implementar para administradores
         return response()->json([
             'success' => false,
             'message' => 'Funcionalidad no implementada'
         ], 501);
     }
 
-    /**
-     * Actualizar tripulante (para administradores)
-     */
     public function update(Request $request, $id): JsonResponse
     {
-        // TODO: Implementar para administradores
         return response()->json([
             'success' => false,
             'message' => 'Funcionalidad no implementada'
         ], 501);
     }
 
-    /**
-     * Eliminar tripulante (para administradores)
-     */
     public function destroy(Request $request, $id): JsonResponse
     {
-        // TODO: Implementar para administradores
         return response()->json([
             'success' => false,
             'message' => 'Funcionalidad no implementada'
