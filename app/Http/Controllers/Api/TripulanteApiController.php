@@ -18,10 +18,35 @@ class TripulanteApiController extends Controller
     public function getPlanificaciones(Request $request): JsonResponse
     {
         try {
-            $tripulante = $request->user();
+            // === LOGS CRÍTICOS ===
+            \Log::info('=== INICIO getPlanificaciones ===');
+            \Log::info('Authorization Header:', [$request->header('Authorization')]);
+            \Log::info('Bearer Token presente:', [str_starts_with($request->header('Authorization', ''), 'Bearer ')]);
 
-            // VALIDACIÓN ADICIONAL - Verificar que el usuario esté realmente autorizado
-            if (!$tripulante || !$tripulante->isApproved() || !$tripulante->activo) {
+            $tripulante = $request->user();
+            \Log::info('Resultado de request->user():', [
+                'user_exists' => !!$tripulante,
+                'user_class' => $tripulante ? get_class($tripulante) : 'NULL',
+                'user_data' => $tripulante ? $tripulante->toArray() : 'NULL'
+            ]);
+
+            if (!$tripulante) {
+                \Log::error('CRÍTICO: No se pudo autenticar al usuario');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Token inválido o expirado'
+                ], 401);
+            }
+
+            // VALIDACIÓN ADICIONAL
+            \Log::info('Validaciones usuario:', [
+                'is_approved' => $tripulante->isApproved(),
+                'activo' => $tripulante->activo,
+                'estado' => $tripulante->estado
+            ]);
+
+            if (!$tripulante->isApproved() || !$tripulante->activo) {
+                \Log::warning('Usuario no autorizado - no aprobado o inactivo');
                 return response()->json([
                     'success' => false,
                     'message' => 'Usuario no autorizado'
@@ -31,6 +56,12 @@ class TripulanteApiController extends Controller
             $page = $request->get('page', 1);
             $perPage = $request->get('per_page', 15);
             $search = $request->get('search', '');
+
+            \Log::info('Parámetros búsqueda:', [
+                'crew_id' => $tripulante->crew_id,
+                'page' => $page,
+                'search' => $search
+            ]);
 
             // Query con datos reales de tu tabla
             $query = Planificacion::with(['aerolinea', 'posicionModel'])
@@ -48,6 +79,15 @@ class TripulanteApiController extends Controller
             }
 
             $planificaciones = $query->paginate($perPage, ['*'], 'page', $page);
+
+            // Log DETALLADO de resultados
+            \Log::info("RESULTADOS CONSULTA:", [
+                'sql_query' => $query->toSql(),
+                'bindings' => $query->getBindings(),
+                'total_found' => $planificaciones->total(),
+                'current_page' => $planificaciones->currentPage(),
+                'per_page' => $planificaciones->perPage()
+            ]);
 
             // Log para debugging
             \Log::info("Planificaciones query for crew_id: {$tripulante->crew_id}, found: " . $planificaciones->total());
