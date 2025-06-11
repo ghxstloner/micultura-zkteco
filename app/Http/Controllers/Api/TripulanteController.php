@@ -196,6 +196,7 @@ class TripulanteController extends Controller
                 'apellidos' => $solicitud->apellidos,
                 'pasaporte' => $solicitud->pasaporte,
                 'identidad' => $solicitud->identidad,
+                'email' => $solicitud->email,
                 'posicion' => $solicitud->posicion,
                 'imagen' => $solicitud->imagen,
                 'fecha_creacion' => now(),
