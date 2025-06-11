@@ -73,6 +73,7 @@ class TripulanteController extends Controller
                     'pasaporte' => $solicitud->pasaporte,
                     'identidad' => $solicitud->identidad,
                     'iata_aerolinea' => $solicitud->iata_aerolinea,
+                    'email' => $solicitud->email,
                     'posicion_info' => [
                         'id_posicion' => $solicitud->posicionModel->id_posicion,
                         'codigo_posicion' => $solicitud->posicionModel->codigo_posicion,
@@ -133,6 +134,7 @@ class TripulanteController extends Controller
                     'pasaporte' => $solicitud->pasaporte,
                     'identidad' => $solicitud->identidad,
                     'iata_aerolinea' => $solicitud->iata_aerolinea,
+                    'email' => $solicitud->email,
                     'posicion_info' => [
                         'id_posicion' => $solicitud->posicionModel->id_posicion,
                         'codigo_posicion' => $solicitud->posicionModel->codigo_posicion,

@@ -21,7 +21,8 @@ class TripulanteSolicitud extends Authenticatable
         'apellidos',
         'pasaporte',
         'identidad',
-        'iata_aerolinea', // ← IMPORTANTE: Debe estar aquí
+        'iata_aerolinea',
+        'email',
         'posicion',
         'imagen',
         'password',
