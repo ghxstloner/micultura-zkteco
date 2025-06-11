@@ -19,6 +19,15 @@ class TripulanteApiController extends Controller
     {
         try {
             $tripulante = $request->user();
+
+            // VALIDACIÓN ADICIONAL - Verificar que el usuario esté realmente autorizado
+            if (!$tripulante || !$tripulante->isApproved() || !$tripulante->activo) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Usuario no autorizado'
+                ], 401);
+            }
+
             $page = $request->get('page', 1);
             $perPage = $request->get('per_page', 15);
             $search = $request->get('search', '');
@@ -39,6 +48,9 @@ class TripulanteApiController extends Controller
             }
 
             $planificaciones = $query->paginate($perPage, ['*'], 'page', $page);
+
+            // Log para debugging
+            \Log::info("Planificaciones query for crew_id: {$tripulante->crew_id}, found: " . $planificaciones->total());
 
             // Mapear SOLO los datos que realmente existen
             $transformedData = $planificaciones->getCollection()->map(function ($planificacion) {
@@ -77,6 +89,7 @@ class TripulanteApiController extends Controller
 
         } catch (\Exception $e) {
             \Log::error('Error al obtener planificaciones: ' . $e->getMessage());
+            \Log::error('Stack trace: ' . $e->getTraceAsString());
 
             return response()->json([
                 'success' => false,
@@ -108,6 +121,14 @@ class TripulanteApiController extends Controller
     {
         try {
             $tripulante = $request->user();
+
+            // VALIDACIÓN ADICIONAL
+            if (!$tripulante || !$tripulante->isApproved() || !$tripulante->activo) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Usuario no autorizado'
+                ], 401);
+            }
 
             $planificacion = Planificacion::with(['aerolinea', 'posicionModel'])
                 ->where('id', $id)
@@ -160,7 +181,17 @@ class TripulanteApiController extends Controller
     public function getProfile(Request $request): JsonResponse
     {
         try {
-            $tripulante = $request->user()->load('posicionModel');
+            $tripulante = $request->user();
+
+            // VALIDACIÓN ADICIONAL
+            if (!$tripulante || !$tripulante->isApproved() || !$tripulante->activo) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Usuario no autorizado'
+                ], 401);
+            }
+
+            $tripulante->load('posicionModel');
 
             return response()->json([
                 'success' => true,
@@ -205,6 +236,14 @@ class TripulanteApiController extends Controller
     {
         try {
             $tripulante = $request->user();
+
+            // VALIDACIÓN ADICIONAL
+            if (!$tripulante || !$tripulante->isApproved() || !$tripulante->activo) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Usuario no autorizado'
+                ], 401);
+            }
 
             $validator = Validator::make($request->all(), [
                 'nombres' => 'sometimes|required|string|max:50',
@@ -317,6 +356,14 @@ class TripulanteApiController extends Controller
     {
         try {
             $tripulante = $request->user();
+
+            // VALIDACIÓN ADICIONAL
+            if (!$tripulante || !$tripulante->isApproved() || !$tripulante->activo) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Usuario no autorizado'
+                ], 401);
+            }
 
             $validator = Validator::make($request->all(), [
                 'current_password' => 'required|string',

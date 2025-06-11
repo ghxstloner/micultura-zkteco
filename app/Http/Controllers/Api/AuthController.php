@@ -8,14 +8,15 @@ use App\Models\Posicion;
 use App\Models\Aerolinea;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
     /**
-     * Login del tripulante
+     * Login de tripulante - SOLO USUARIOS APROBADOS Y ACTIVOS
      */
     public function login(Request $request): JsonResponse
     {
@@ -33,30 +34,33 @@ class AuthController extends Controller
                 ], 422);
             }
 
-            // Buscar solicitud aprobada
-            $solicitud = TripulanteSolicitud::where('crew_id', $request->crew_id)
-                ->where('estado', 'Aprobado')
-                ->where('activo', true)
+            // Buscar SOLO usuarios aprobados y activos
+            $tripulante = TripulanteSolicitud::where('crew_id', $request->crew_id)
+                ->where('estado', 'Aprobado')  // SOLO APROBADOS
+                ->where('activo', true)        // SOLO ACTIVOS
                 ->with('posicionModel')
                 ->first();
 
-            if (!$solicitud) {
+            if (!$tripulante) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Credenciales inválidas o cuenta no activa'
+                    'message' => 'Credenciales inválidas o cuenta no autorizada'
                 ], 401);
             }
 
             // Verificar contraseña
-            if (!Hash::check($request->password, $solicitud->password)) {
+            if (!Hash::check($request->password, $tripulante->password)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Credenciales inválidas'
                 ], 401);
             }
 
-            // Generar token
-            $token = $solicitud->createToken('CrewManager')->plainTextToken;
+            // Revocar tokens anteriores para evitar problemas
+            $tripulante->tokens()->delete();
+
+            // Crear nuevo token
+            $token = $tripulante->createToken('mobile-app')->plainTextToken;
 
             return response()->json([
                 'success' => true,
@@ -64,32 +68,34 @@ class AuthController extends Controller
                 'data' => [
                     'token' => $token,
                     'tripulante' => [
-                        'id_solicitud' => $solicitud->id_solicitud,
-                        'crew_id' => $solicitud->crew_id,
-                        'nombres' => $solicitud->nombres,
-                        'apellidos' => $solicitud->apellidos,
-                        'nombres_apellidos' => $solicitud->nombres_apellidos,
-                        'pasaporte' => $solicitud->pasaporte,
-                        'identidad' => $solicitud->identidad,
-                        'iata_aerolinea' => $solicitud->iata_aerolinea,
+                        'id_solicitud' => $tripulante->id_solicitud,
+                        'crew_id' => $tripulante->crew_id,
+                        'nombres' => $tripulante->nombres,
+                        'apellidos' => $tripulante->apellidos,
+                        'nombres_apellidos' => $tripulante->nombres_apellidos,
+                        'pasaporte' => $tripulante->pasaporte,
+                        'identidad' => $tripulante->identidad,
+                        'iata_aerolinea' => $tripulante->iata_aerolinea,
                         'posicion' => [
-                            'id_posicion' => $solicitud->posicionModel->id_posicion,
-                            'codigo_posicion' => $solicitud->posicionModel->codigo_posicion,
-                            'descripcion' => $solicitud->posicionModel->descripcion,
+                            'id_posicion' => $tripulante->posicionModel->id_posicion,
+                            'codigo_posicion' => $tripulante->posicionModel->codigo_posicion,
+                            'descripcion' => $tripulante->posicionModel->descripcion,
                         ],
-                        'imagen_url' => $solicitud->imagen_url,
-                        'activo' => $solicitud->activo,
-                        'estado' => $solicitud->estado,
-                        'fecha_solicitud' => $solicitud->fecha_solicitud->format('Y-m-d H:i:s'),
-                        'fecha_aprobacion' => $solicitud->fecha_aprobacion?->format('Y-m-d H:i:s'),
+                        'imagen_url' => $tripulante->imagen_url,
+                        'activo' => $tripulante->activo,
+                        'estado' => $tripulante->estado,
+                        'fecha_solicitud' => $tripulante->fecha_solicitud->format('Y-m-d H:i:s'),
+                        'fecha_aprobacion' => $tripulante->fecha_aprobacion?->format('Y-m-d H:i:s'),
                     ]
                 ]
             ]);
 
         } catch (\Exception $e) {
+            \Log::error('Error en login: ' . $e->getMessage());
+
             return response()->json([
                 'success' => false,
-                'message' => 'Error en el login',
+                'message' => 'Error interno del servidor',
                 'error' => env('APP_DEBUG') ? $e->getMessage() : 'Error interno'
             ], 500);
         }
@@ -102,15 +108,15 @@ class AuthController extends Controller
     {
         try {
             $validator = Validator::make($request->all(), [
-                'crew_id' => 'required|string|max:10|unique:tripulantes_solicitudes,crew_id',
+                'crew_id' => 'required|string|unique:tripulantes_solicitudes,crew_id',
                 'nombres' => 'required|string|max:50',
                 'apellidos' => 'required|string|max:50',
                 'pasaporte' => 'required|string|max:20|unique:tripulantes_solicitudes,pasaporte',
                 'identidad' => 'nullable|string|max:20',
-                'iata_aerolinea' => 'required|string|max:10',
+                'iata_aerolinea' => 'required|string|max:2',
                 'posicion' => 'required|integer|exists:posiciones,id_posicion',
                 'password' => 'required|string|min:6',
-                'image' => 'required|image|mimes:jpeg,jpg,png,gif|max:5120',
+                'image' => 'nullable|image|mimes:jpeg,jpg,png,gif|max:5120',
             ]);
 
             if ($validator->fails()) {
@@ -121,8 +127,9 @@ class AuthController extends Controller
                 ], 422);
             }
 
-            // Procesar imagen
             $nombreImagen = null;
+
+            // Procesar imagen si existe
             if ($request->hasFile('image')) {
                 try {
                     $archivo = $request->file('image');
@@ -136,7 +143,6 @@ class AuthController extends Controller
                     $directorio = $request->crew_id;
                     $rutaCompleta = $directorio . '/' . $nombreImagen;
 
-                    // Guardar imagen
                     $disk = Storage::disk('crew_images');
                     $disk->makeDirectory($directorio);
 
@@ -148,6 +154,7 @@ class AuthController extends Controller
                     }
 
                 } catch (\Exception $e) {
+                    \Log::error('Error al procesar imagen: ' . $e->getMessage());
                     return response()->json([
                         'success' => false,
                         'message' => 'Error al procesar la imagen: ' . $e->getMessage()
@@ -173,7 +180,7 @@ class AuthController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Solicitud de registro enviada exitosamente',
+                'message' => 'Solicitud creada exitosamente',
                 'data' => [
                     'id_solicitud' => $solicitud->id_solicitud,
                     'crew_id' => $solicitud->crew_id,
@@ -184,6 +191,8 @@ class AuthController extends Controller
             ]);
 
         } catch (\Exception $e) {
+            \Log::error('Error en registro: ' . $e->getMessage());
+
             return response()->json([
                 'success' => false,
                 'message' => 'Error al procesar el registro',
@@ -215,13 +224,13 @@ class AuthController extends Controller
             if (!$solicitud) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'No se encontró solicitud para este Crew ID'
+                    'message' => 'No se encontró ninguna solicitud con ese Crew ID'
                 ], 404);
             }
 
             return response()->json([
                 'success' => true,
-                'message' => 'Estado de solicitud obtenido',
+                'message' => 'Estado de solicitud obtenido exitosamente',
                 'data' => [
                     'crew_id' => $solicitud->crew_id,
                     'nombres_apellidos' => $solicitud->nombres_apellidos,
@@ -233,6 +242,8 @@ class AuthController extends Controller
             ]);
 
         } catch (\Exception $e) {
+            \Log::error('Error al verificar estado: ' . $e->getMessage());
+
             return response()->json([
                 'success' => false,
                 'message' => 'Error al verificar estado',
@@ -242,39 +253,49 @@ class AuthController extends Controller
     }
 
     /**
-     * Información del usuario autenticado
+     * Obtener información del usuario autenticado
      */
     public function me(Request $request): JsonResponse
     {
         try {
-            $solicitud = $request->user()->load('posicionModel');
+            $tripulante = $request->user()->load('posicionModel');
+
+            // Verificar que el usuario siga siendo válido
+            if (!$tripulante->isApproved() || !$tripulante->activo) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Usuario no autorizado'
+                ], 401);
+            }
 
             return response()->json([
                 'success' => true,
-                'message' => 'Información del usuario obtenida',
+                'message' => 'Información de usuario obtenida exitosamente',
                 'data' => [
-                    'id_solicitud' => $solicitud->id_solicitud,
-                    'crew_id' => $solicitud->crew_id,
-                    'nombres' => $solicitud->nombres,
-                    'apellidos' => $solicitud->apellidos,
-                    'nombres_apellidos' => $solicitud->nombres_apellidos,
-                    'pasaporte' => $solicitud->pasaporte,
-                    'identidad' => $solicitud->identidad,
-                    'iata_aerolinea' => $solicitud->iata_aerolinea,
+                    'id_solicitud' => $tripulante->id_solicitud,
+                    'crew_id' => $tripulante->crew_id,
+                    'nombres' => $tripulante->nombres,
+                    'apellidos' => $tripulante->apellidos,
+                    'nombres_apellidos' => $tripulante->nombres_apellidos,
+                    'pasaporte' => $tripulante->pasaporte,
+                    'identidad' => $tripulante->identidad,
+                    'iata_aerolinea' => $tripulante->iata_aerolinea,
                     'posicion' => [
-                        'id_posicion' => $solicitud->posicionModel->id_posicion,
-                        'codigo_posicion' => $solicitud->posicionModel->codigo_posicion,
-                        'descripcion' => $solicitud->posicionModel->descripcion,
+                        'id_posicion' => $tripulante->posicionModel->id_posicion,
+                        'codigo_posicion' => $tripulante->posicionModel->codigo_posicion,
+                        'descripcion' => $tripulante->posicionModel->descripcion,
                     ],
-                    'imagen_url' => $solicitud->imagen_url,
-                    'activo' => $solicitud->activo,
-                    'estado' => $solicitud->estado,
-                    'fecha_solicitud' => $solicitud->fecha_solicitud->format('Y-m-d H:i:s'),
-                    'fecha_aprobacion' => $solicitud->fecha_aprobacion?->format('Y-m-d H:i:s'),
+                    'imagen_url' => $tripulante->imagen_url,
+                    'activo' => $tripulante->activo,
+                    'estado' => $tripulante->estado,
+                    'fecha_solicitud' => $tripulante->fecha_solicitud->format('Y-m-d H:i:s'),
+                    'fecha_aprobacion' => $tripulante->fecha_aprobacion?->format('Y-m-d H:i:s'),
                 ]
             ]);
 
         } catch (\Exception $e) {
+            \Log::error('Error al obtener información del usuario: ' . $e->getMessage());
+
             return response()->json([
                 'success' => false,
                 'message' => 'Error al obtener información del usuario',
@@ -297,16 +318,17 @@ class AuthController extends Controller
             ]);
 
         } catch (\Exception $e) {
+            \Log::error('Error en logout: ' . $e->getMessage());
+
             return response()->json([
-                'success' => false,
-                'message' => 'Error en logout',
-                'error' => env('APP_DEBUG') ? $e->getMessage() : 'Error interno'
-            ], 500);
+                'success' => true,
+                'message' => 'Logout completado'
+            ]);
         }
     }
 
     /**
-     * Obtener posiciones disponibles
+     * Obtener todas las posiciones disponibles
      */
     public function posiciones(): JsonResponse
     {
@@ -326,6 +348,8 @@ class AuthController extends Controller
             ]);
 
         } catch (\Exception $e) {
+            \Log::error('Error al obtener posiciones: ' . $e->getMessage());
+
             return response()->json([
                 'success' => false,
                 'message' => 'Error al obtener posiciones',
@@ -335,7 +359,7 @@ class AuthController extends Controller
     }
 
     /**
-     * Obtener aerolíneas disponibles
+     * Obtener todas las aerolíneas disponibles
      */
     public function aerolineas(): JsonResponse
     {
@@ -355,6 +379,8 @@ class AuthController extends Controller
             ]);
 
         } catch (\Exception $e) {
+            \Log::error('Error al obtener aerolíneas: ' . $e->getMessage());
+
             return response()->json([
                 'success' => false,
                 'message' => 'Error al obtener aerolíneas',
