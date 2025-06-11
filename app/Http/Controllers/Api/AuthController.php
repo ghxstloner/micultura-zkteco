@@ -108,22 +108,46 @@ class AuthController extends Controller
     {
         try {
             $validator = Validator::make($request->all(), [
-                'crew_id' => 'required|string|unique:tripulantes_solicitudes,crew_id',
+                'crew_id' => [
+                    'required',
+                    'string',
+                    Rule::unique('tripulantes_solicitudes')->where(function ($query) use ($request) {
+                        return $query->where('iata_aerolinea', $request->iata_aerolinea);
+                    })
+                ],
                 'nombres' => 'required|string|max:50',
                 'apellidos' => 'required|string|max:50',
                 'pasaporte' => 'required|string|max:20|unique:tripulantes_solicitudes,pasaporte',
+                'email' => 'required|email|unique:tripulantes_solicitudes,email',
                 'identidad' => 'nullable|string|max:20',
                 'iata_aerolinea' => 'required|string|max:2',
                 'posicion' => 'required|integer|exists:posiciones,id_posicion',
                 'password' => 'required|string|min:6',
                 'image' => 'nullable|image|mimes:jpeg,jpg,png,gif|max:5120',
+            ], [
+                // Mensajes personalizados más claros
+                'crew_id.required' => 'El Crew ID es obligatorio',
+                'crew_id.unique' => 'Este Crew ID ya está registrado en la aerolínea seleccionada',
+                'pasaporte.unique' => 'Este número de pasaporte ya está registrado en el sistema',
+                'email.unique' => 'Este correo electrónico ya está registrado en el sistema',
+                'email.email' => 'El formato del correo electrónico no es válido',
+                'nombres.required' => 'El nombre es obligatorio',
+                'apellidos.required' => 'Los apellidos son obligatorios',
+                'posicion.exists' => 'La posición seleccionada no es válida',
+                'iata_aerolinea.required' => 'La aerolínea es obligatoria',
+                'password.min' => 'La contraseña debe tener al menos 6 caracteres',
             ]);
 
             if ($validator->fails()) {
+                // Obtener el primer error más específico
+                $errors = $validator->errors();
+                $firstError = $errors->first();
+
                 return response()->json([
                     'success' => false,
-                    'message' => 'Datos de entrada inválidos',
-                    'errors' => $validator->errors()
+                    'message' => $firstError, // Mensaje específico del error
+                    'errors' => $errors->toArray(),
+                    'error_details' => $this->formatValidationErrors($errors)
                 ], 422);
             }
 
@@ -202,6 +226,22 @@ class AuthController extends Controller
                 'error' => env('APP_DEBUG') ? $e->getMessage() : 'Error interno'
             ], 500);
         }
+    }
+
+    /**
+     * Formatear errores de validación para el frontend
+     */
+    private function formatValidationErrors($errors): array
+    {
+        $formatted = [];
+        foreach ($errors->toArray() as $field => $messages) {
+            $formatted[$field] = [
+                'field' => $field,
+                'messages' => $messages,
+                'first_message' => $messages[0] ?? ''
+            ];
+        }
+        return $formatted;
     }
 
     /**
