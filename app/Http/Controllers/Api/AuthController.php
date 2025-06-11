@@ -172,6 +172,7 @@ class AuthController extends Controller
                 'pasaporte' => $request->pasaporte,
                 'identidad' => $request->identidad,
                 'iata_aerolinea' => $request->iata_aerolinea,
+                'email' => $request->email,
                 'posicion' => $request->posicion,
                 'imagen' => $nombreImagen,
                 'password' => Hash::make($request->password),
