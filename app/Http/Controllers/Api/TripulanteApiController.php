@@ -279,7 +279,9 @@ class TripulanteApiController extends Controller
 
                     $extension = $archivo->getClientOriginalExtension();
                     $nombreArchivo = 'foto.' . $extension;
-                    $directorio = $tripulante->crew_id . '/' . $tripulante->iata_aerolinea;
+
+                    // ✅ ESTRUCTURA UNIFICADA: iata_aerolinea/crew_id
+                    $directorio = $tripulante->iata_aerolinea . '/' . $tripulante->crew_id;
                     $rutaCompleta = $directorio . '/' . $nombreArchivo;
 
                     $disk = Storage::disk('crew_images');

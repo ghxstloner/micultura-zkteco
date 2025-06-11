@@ -140,7 +140,9 @@ class AuthController extends Controller
 
                     $extension = $archivo->getClientOriginalExtension();
                     $nombreImagen = 'foto.' . $extension;
-                    $directorio = $request->crew_id;
+
+                    // ✅ ESTRUCTURA UNIFICADA: iata_aerolinea/crew_id
+                    $directorio = $request->iata_aerolinea . '/' . $request->crew_id;
                     $rutaCompleta = $directorio . '/' . $nombreImagen;
 
                     $disk = Storage::disk('crew_images');
