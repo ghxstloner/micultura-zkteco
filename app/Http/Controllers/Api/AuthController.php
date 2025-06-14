@@ -13,6 +13,8 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\EmailVerificationMail;
 
 class AuthController extends Controller
 {
@@ -428,6 +430,281 @@ class AuthController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Error al obtener aerolíneas',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : 'Error interno'
+            ], 500);
+        }
+    }
+
+    /**
+     * Iniciar el proceso de registro con verificación de email
+     */
+    public function initiateRegister(Request $request): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'crew_id' => 'required|string|max:10|unique:tripulantes_solicitudes,crew_id',
+                'nombres' => 'required|string|max:50',
+                'apellidos' => 'required|string|max:50',
+                'email' => 'required|email|max:100|unique:tripulantes_solicitudes,email',
+                'pasaporte' => 'required|string|max:20|unique:tripulantes_solicitudes,pasaporte',
+                'identidad' => 'nullable|string|max:20',
+                'iata_aerolinea' => 'required|string|size:2|exists:aerolineas,siglas',
+                'posicion' => 'required|integer|exists:posiciones,id_posicion',
+                'password' => 'required|string|min:6',
+                'image' => 'nullable|image|mimes:jpeg,jpg,png,gif|max:5120',
+            ]);
+
+            if ($validator->fails()) {
+                return $this->handleValidationErrors($validator, $request);
+            }
+
+            // Generar PIN de 6 dígitos
+            $pin = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+
+            // Crear clave única para este registro
+            $verificationKey = 'email_verification_' . $request->crew_id . '_' . time();
+
+            // Procesar imagen si existe
+            $imagenNombre = null;
+            if ($request->hasFile('image')) {
+                try {
+                    $archivo = $request->file('image');
+                    if (!$archivo->isValid()) {
+                        throw new \Exception('Archivo de imagen inválido');
+                    }
+
+                    $extension = $archivo->getClientOriginalExtension();
+                    $imagenNombre = 'foto.' . $extension;
+                    $directorio = $request->iata_aerolinea . '/' . $request->crew_id;
+                    $rutaCompleta = $directorio . '/' . $imagenNombre;
+
+                    $disk = Storage::disk('crew_images');
+                    $disk->makeDirectory($directorio);
+
+                    $contenidoArchivo = file_get_contents($archivo->getPathname());
+                    $guardado = $disk->put($rutaCompleta, $contenidoArchivo);
+
+                    if (!$guardado) {
+                        throw new \Exception('Error al guardar imagen');
+                    }
+                } catch (\Exception $e) {
+                    \Log::error('Error al procesar imagen: ' . $e->getMessage());
+                    $imagenNombre = null;
+                }
+            }
+
+            // Guardar datos temporales en cache (20 minutos)
+            $tempData = [
+                'crew_id' => $request->crew_id,
+                'nombres' => $request->nombres,
+                'apellidos' => $request->apellidos,
+                'email' => $request->email,
+                'pasaporte' => $request->pasaporte,
+                'identidad' => $request->identidad,
+                'iata_aerolinea' => $request->iata_aerolinea,
+                'posicion' => $request->posicion,
+                'password_hash' => Hash::make($request->password),
+                'imagen' => $imagenNombre,
+                'pin' => $pin,
+                'pin_expires_at' => now()->addMinutes(15)->timestamp,
+            ];
+
+            cache()->put($verificationKey, $tempData, now()->addMinutes(20));
+
+            // Enviar email de verificación
+            try {
+                Mail::to($request->email)->send(
+                    new EmailVerificationMail($pin, $request->crew_id)
+                );
+            } catch (\Exception $e) {
+                \Log::error('Error enviando email de verificación: ' . $e->getMessage());
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Error al enviar el email de verificación. Verifica que tu dirección de correo sea válida.',
+                ], 500);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Email de verificación enviado exitosamente',
+                'data' => [
+                    'verification_key' => $verificationKey,
+                    'email' => $request->email,
+                    'crew_id' => $request->crew_id,
+                    'expires_in_minutes' => 15
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error en initiate register: ' . $e->getMessage());
+            \Log::error('Stack trace: ' . $e->getTraceAsString());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al procesar la solicitud de registro',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : 'Error interno'
+            ], 500);
+        }
+    }
+
+    /**
+     * Verificar PIN y completar registro
+     */
+    public function verifyEmailAndRegister(Request $request): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'verification_key' => 'required|string',
+                'pin' => 'required|string|size:6',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Datos de verificación inválidos',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            // Recuperar datos del cache
+            $tempData = cache()->get($request->verification_key);
+
+            if (!$tempData) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Código de verificación expirado o inválido. Reinicia el proceso de registro.'
+                ], 400);
+            }
+
+            // Verificar si el PIN ha expirado
+            if (time() > $tempData['pin_expires_at']) {
+                cache()->forget($request->verification_key);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'El código de verificación ha expirado'
+                ], 400);
+            }
+
+            // Verificar PIN
+            if ($tempData['pin'] !== $request->pin) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Código de verificación incorrecto'
+                ], 400);
+            }
+
+            // PIN válido, crear la solicitud de tripulante con email verificado
+            $solicitud = TripulanteSolicitud::create([
+                'crew_id' => $tempData['crew_id'],
+                'nombres' => $tempData['nombres'],
+                'apellidos' => $tempData['apellidos'],
+                'email' => $tempData['email'],
+                'pasaporte' => $tempData['pasaporte'],
+                'identidad' => $tempData['identidad'],
+                'iata_aerolinea' => $tempData['iata_aerolinea'],
+                'posicion' => $tempData['posicion'],
+                'password' => $tempData['password_hash'],
+                'imagen' => $tempData['imagen'],
+                'estado' => 'Pendiente',
+                'activo' => true,
+                'email_verified' => 1, // ✅ Marcar email como verificado
+                'email_verified_at' => now(), // ✅ Timestamp de verificación
+                'fecha_solicitud' => now(),
+            ]);
+
+            // Limpiar datos temporales
+            cache()->forget($request->verification_key);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Registro completado exitosamente. Tu solicitud está pendiente de aprobación.',
+                'data' => [
+                    'id_solicitud' => $solicitud->id_solicitud,
+                    'crew_id' => $solicitud->crew_id,
+                    'nombres_apellidos' => $solicitud->nombres_apellidos,
+                    'estado' => $solicitud->estado,
+                    'fecha_solicitud' => $solicitud->fecha_solicitud->format('Y-m-d H:i:s'),
+                    'email_verified' => true,
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error en verify email and register: ' . $e->getMessage());
+            \Log::error('Stack trace: ' . $e->getTraceAsString());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al completar el registro',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : 'Error interno'
+            ], 500);
+        }
+    }
+
+    /**
+     * Reenviar PIN de verificación
+     */
+    public function resendVerificationPin(Request $request): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'verification_key' => 'required|string',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Clave de verificación requerida',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            // Recuperar datos del cache
+            $tempData = cache()->get($request->verification_key);
+
+            if (!$tempData) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Sesión de verificación expirada. Reinicia el proceso de registro.'
+                ], 400);
+            }
+
+            // Generar nuevo PIN
+            $newPin = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+
+            // Actualizar datos en cache con nuevo PIN
+            $tempData['pin'] = $newPin;
+            $tempData['pin_expires_at'] = now()->addMinutes(15)->timestamp;
+
+            cache()->put($request->verification_key, $tempData, now()->addMinutes(20));
+
+            // Enviar nuevo email
+            try {
+                Mail::to($tempData['email'])->send(
+                    new EmailVerificationMail($newPin, $tempData['crew_id'])
+                );
+            } catch (\Exception $e) {
+                \Log::error('Error enviando email de verificación: ' . $e->getMessage());
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Error al enviar el email de verificación',
+                ], 500);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Nuevo código de verificación enviado',
+                'data' => [
+                    'verification_key' => $request->verification_key,
+                    'expires_in_minutes' => 15
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error en resend verification pin: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al reenviar código de verificación',
                 'error' => env('APP_DEBUG') ? $e->getMessage() : 'Error interno'
             ], 500);
         }

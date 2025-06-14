@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Marcacion extends Model
 {
@@ -32,10 +33,40 @@ class Marcacion extends Model
      * Los atributos que se pueden asignar masivamente.
      */
     protected $fillable = [
-        'id_planificacion', // Clave Primaria de la BD, necesita un valor.
+        'id_planificacion',
         'id_tripulante',
+        'crew_id',
         'fecha_marcacion',
         'hora_marcacion',
         'lugar_marcacion',
+        'punto_control',
+        'procesado',
+        'tipo_marcacion',
+        'usuario',
     ];
+
+    protected $casts = [
+        'fecha_marcacion' => 'date',
+    ];
+
+    // Relaciones
+    public function planificacion(): BelongsTo
+    {
+        return $this->belongsTo(Planificacion::class, 'id_planificacion', 'id');
+    }
+
+    public function tripulante(): BelongsTo
+    {
+        return $this->belongsTo(Tripulante::class, 'id_tripulante', 'id_tripulante');
+    }
+
+    public function puntoControl(): BelongsTo
+    {
+        return $this->belongsTo(PuntoControl::class, 'punto_control', 'id_punto');
+    }
+
+    public function lugarMarcacion(): BelongsTo
+    {
+        return $this->belongsTo(Aeropuerto::class, 'lugar_marcacion', 'id_aeropuerto');
+    }
 }

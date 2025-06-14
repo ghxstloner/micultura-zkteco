@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Planificacion;
+use App\Models\Marcacion;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
@@ -101,6 +102,110 @@ class TripulanteApiController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Error al obtener planificaciones',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : 'Error interno'
+            ], 500);
+        }
+    }
+
+    /**
+     * Obtener información de marcación para una planificación procesada
+     */
+    public function getMarcacionInfo(Request $request, int $planificacionId): JsonResponse
+    {
+        try {
+            $tripulante = $request->user();
+
+            if (!$tripulante || !$tripulante->isApproved() || !$tripulante->activo) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Usuario no autorizado'
+                ], 401);
+            }
+
+            // Verificar que la planificación pertenezca al tripulante
+            $planificacion = Planificacion::where('id', $planificacionId)
+                ->where('crew_id', $tripulante->crew_id)
+                ->first();
+
+            if (!$planificacion) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Planificación no encontrada'
+                ], 404);
+            }
+
+            // Verificar que la planificación esté procesada
+            if ($planificacion->estatus !== 'R') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'La planificación aún no está procesada'
+                ], 400);
+            }
+
+            // Buscar la marcación correspondiente
+            $marcacion = Marcacion::with([
+                'lugarMarcacion',
+                'puntoControl.aeropuerto',
+                'puntoControl.dispositivosPuntos.dispositivo'
+            ])
+            ->where('id_planificacion', $planificacionId)
+            ->where('crew_id', $tripulante->crew_id)
+            ->first();
+
+            if (!$marcacion) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No se encontró información de marcación'
+                ], 404);
+            }
+
+            // Obtener información del dispositivo si existe
+            $dispositivoInfo = null;
+            if ($marcacion->puntoControl && $marcacion->puntoControl->dispositivosPuntos->isNotEmpty()) {
+                $dispositivoPunto = $marcacion->puntoControl->dispositivosPuntos->first();
+                $dispositivoInfo = [
+                    'device_id' => $dispositivoPunto->id_device,
+                    'device_sn' => $dispositivoPunto->device_sn,
+                ];
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Información de marcación obtenida exitosamente',
+                'data' => [
+                    'id_marcacion' => $marcacion->id_marcacion,
+                    'fecha_marcacion' => $marcacion->fecha_marcacion?->format('Y-m-d'),
+                    'hora_marcacion' => $marcacion->hora_marcacion,
+                    'lugar_marcacion' => [
+                        'id' => $marcacion->lugarMarcacion?->id_aeropuerto,
+                        'nombre' => $marcacion->lugarMarcacion?->descripcion ?? 'N/A',
+                        'codigo' => $marcacion->lugarMarcacion?->codigo ?? 'N/A',
+                    ],
+                    'punto_control' => [
+                        'id' => $marcacion->puntoControl?->id_punto,
+                        'descripcion' => $marcacion->puntoControl?->descripcion_punto ?? 'N/A',
+                        'aeropuerto' => $marcacion->puntoControl?->aeropuerto?->descripcion ?? 'N/A',
+                    ],
+                    'dispositivo' => $dispositivoInfo,
+                    'procesado' => $marcacion->procesado === '1',
+                    'tipo_marcacion' => $marcacion->tipo_marcacion,
+                    'usuario_sistema' => $marcacion->usuario,
+                    'planificacion' => [
+                        'id' => $planificacion->id,
+                        'numero_vuelo' => $planificacion->numero_vuelo,
+                        'fecha_vuelo' => $planificacion->fecha_vuelo?->format('Y-m-d'),
+                        'hora_vuelo' => $planificacion->hora_vuelo,
+                        'iata_aerolinea' => $planificacion->iata_aerolinea,
+                    ]
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error al obtener información de marcación: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al obtener información de marcación',
                 'error' => env('APP_DEBUG') ? $e->getMessage() : 'Error interno'
             ], 500);
         }

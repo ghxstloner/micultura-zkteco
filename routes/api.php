@@ -24,6 +24,9 @@ Route::middleware([\App\Http\Middleware\ApiTokenMiddleware::class])->group(funct
 Route::prefix('auth')->group(function () {
     Route::post('/login', [AuthController::class, 'login']);
     Route::post('/register', [AuthController::class, 'register']);
+    Route::post('/initiate-register', [AuthController::class, 'initiateRegister']);
+    Route::post('/verify-email', [AuthController::class, 'verifyEmailAndRegister']);
+    Route::post('/resend-pin', [AuthController::class, 'resendVerificationPin']);
     Route::post('/check-status', [AuthController::class, 'checkStatus']);
 });
 
@@ -48,6 +51,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Planificaciones del tripulante
         Route::get('/planificaciones', [TripulanteApiController::class, 'getPlanificaciones']);
         Route::get('/planificaciones/{id}', [TripulanteApiController::class, 'getPlanificacion']);
+        Route::get('/planificaciones/{id}/marcacion', [TripulanteApiController::class, 'getMarcacionInfo']);
 
         // Perfil del tripulante
         Route::get('/profile', [TripulanteApiController::class, 'getProfile']);
