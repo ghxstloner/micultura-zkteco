@@ -205,6 +205,8 @@ class AuthController extends Controller
                 'password' => Hash::make($request->password),
                 'estado' => 'Pendiente',
                 'activo' => false,
+                'email_verified' => 0, // ✅ Por defecto NO verificado
+                'email_verified_at' => null, // ✅ Sin timestamp inicial
                 'fecha_solicitud' => now(),
             ]);
 

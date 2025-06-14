@@ -10,6 +10,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\DB;
 
 class TripulanteApiController extends Controller
 {
@@ -418,7 +419,14 @@ class TripulanteApiController extends Controller
                 $tripulante->apellidos = $request->apellidos;
             }
             if ($request->has('pasaporte')) {
+                $oldPassport = $tripulante->pasaporte;
                 $tripulante->pasaporte = $request->pasaporte;
+
+                // También actualizar en la tabla tripulantes si existe el registro
+                DB::table('tripulantes')
+                    ->where('crew_id', $tripulante->crew_id)
+                    ->where('pasaporte', $oldPassport)
+                    ->update(['pasaporte' => $request->pasaporte]);
             }
             if ($request->has('identidad')) {
                 $tripulante->identidad = $request->identidad;
