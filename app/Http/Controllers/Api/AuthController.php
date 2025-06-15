@@ -457,7 +457,40 @@ class AuthController extends Controller
             ]);
 
             if ($validator->fails()) {
-                return $this->handleValidationErrors($validator, $request);
+                $errors = $validator->errors();
+                $errorDetails = [];
+
+                // Manejar errores específicos
+                if ($errors->has('crew_id')) {
+                    $errorDetails['crew_id'] = [
+                        'field' => 'crew_id',
+                        'message' => 'Este Crew ID ya está registrado en esta aerolínea',
+                        'suggestion' => 'Verifica tu Crew ID o contacta al administrador'
+                    ];
+                }
+
+                if ($errors->has('email')) {
+                    $errorDetails['email'] = [
+                        'field' => 'email',
+                        'message' => 'Este email ya está registrado',
+                        'suggestion' => 'Usa un email diferente o recupera tu cuenta existente'
+                    ];
+                }
+
+                if ($errors->has('pasaporte')) {
+                    $errorDetails['pasaporte'] = [
+                        'field' => 'pasaporte',
+                        'message' => 'Este número de pasaporte ya está registrado',
+                        'suggestion' => 'Verifica el número de pasaporte'
+                    ];
+                }
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Datos de registro inválidos',
+                    'errors' => $errors,
+                    'error_details' => $errorDetails
+                ], 422);
             }
 
             // Generar PIN de 6 dígitos

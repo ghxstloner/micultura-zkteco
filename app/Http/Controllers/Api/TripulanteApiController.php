@@ -143,32 +143,73 @@ class TripulanteApiController extends Controller
                 ], 400);
             }
 
-            // Buscar la marcación correspondiente
-            $marcacion = Marcacion::with([
-                'lugarMarcacion',
-                'puntoControl.aeropuerto',
-                'puntoControl.dispositivosPuntos.dispositivo'
-            ])
-            ->where('id_planificacion', $planificacionId)
-            ->where('crew_id', $tripulante->crew_id)
-            ->first();
+            // Buscar la marcación correspondiente - consulta simplificada
+            $marcacion = Marcacion::where('id_planificacion', $planificacionId)
+                ->where('crew_id', $tripulante->crew_id)
+                ->first();
+
+            \Log::info('Buscando marcación para planificación: ' . $planificacionId . ' y crew_id: ' . $tripulante->crew_id);
 
             if (!$marcacion) {
+                \Log::warning('No se encontró marcación para planificación ' . $planificacionId);
+
+                // También verificar si existe alguna marcación para esta planificación
+                $anyMarcacion = Marcacion::where('id_planificacion', $planificacionId)->first();
+                if ($anyMarcacion) {
+                    \Log::info('Existe marcación para planificación pero con diferente crew_id: ' . $anyMarcacion->crew_id);
+                }
+
                 return response()->json([
                     'success' => false,
                     'message' => 'No se encontró información de marcación'
                 ], 404);
             }
 
-            // Obtener información del dispositivo si existe
-            $dispositivoInfo = null;
-            if ($marcacion->puntoControl && $marcacion->puntoControl->dispositivosPuntos->isNotEmpty()) {
-                $dispositivoPunto = $marcacion->puntoControl->dispositivosPuntos->first();
-                $dispositivoInfo = [
-                    'device_id' => $dispositivoPunto->id_device,
-                    'device_sn' => $dispositivoPunto->device_sn,
-                ];
+            \Log::info('Marcación encontrada: ', $marcacion->toArray());
+
+            // Buscar manualmente la información relacionada
+            $lugarMarcacion = [
+                'id' => null,
+                'nombre' => 'N/A',
+                'codigo' => 'N/A',
+            ];
+
+            if ($marcacion->lugar_marcacion) {
+                $aeropuerto = \DB::table('aeropuertos')
+                    ->where('id_aeropuerto', $marcacion->lugar_marcacion)
+                    ->first();
+
+                if ($aeropuerto) {
+                    $lugarMarcacion = [
+                        'id' => $aeropuerto->id_aeropuerto,
+                        'nombre' => $aeropuerto->descripcion_aeropuerto ?? 'N/A',
+                        'codigo' => $aeropuerto->codigo_iata ?? 'N/A',
+                    ];
+                }
             }
+
+            $puntoControl = [
+                'id' => null,
+                'descripcion' => 'N/A',
+                'aeropuerto' => 'N/A',
+            ];
+
+            if ($marcacion->punto_control) {
+                $punto = \DB::table('puntos_control')
+                    ->where('id_punto', $marcacion->punto_control)
+                    ->first();
+
+                if ($punto) {
+                    $puntoControl = [
+                        'id' => $punto->id_punto,
+                        'descripcion' => $punto->descripcion_punto ?? 'N/A',
+                        'aeropuerto' => 'N/A', // Buscaremos después si es necesario
+                    ];
+                }
+            }
+
+            // Información básica del dispositivo (si existe)
+            $dispositivoInfo = null;
 
             return response()->json([
                 'success' => true,
@@ -177,16 +218,8 @@ class TripulanteApiController extends Controller
                     'id_marcacion' => $marcacion->id_marcacion,
                     'fecha_marcacion' => $marcacion->fecha_marcacion?->format('Y-m-d'),
                     'hora_marcacion' => $marcacion->hora_marcacion,
-                    'lugar_marcacion' => [
-                        'id' => $marcacion->lugarMarcacion?->id_aeropuerto,
-                        'nombre' => $marcacion->lugarMarcacion?->descripcion ?? 'N/A',
-                        'codigo' => $marcacion->lugarMarcacion?->codigo ?? 'N/A',
-                    ],
-                    'punto_control' => [
-                        'id' => $marcacion->puntoControl?->id_punto,
-                        'descripcion' => $marcacion->puntoControl?->descripcion_punto ?? 'N/A',
-                        'aeropuerto' => $marcacion->puntoControl?->aeropuerto?->descripcion ?? 'N/A',
-                    ],
+                    'lugar_marcacion' => $lugarMarcacion,
+                    'punto_control' => $puntoControl,
                     'dispositivo' => $dispositivoInfo,
                     'procesado' => $marcacion->procesado === '1',
                     'tipo_marcacion' => $marcacion->tipo_marcacion,
@@ -422,10 +455,10 @@ class TripulanteApiController extends Controller
                 $oldPassport = $tripulante->pasaporte;
                 $tripulante->pasaporte = $request->pasaporte;
 
-                // También actualizar en la tabla tripulantes si existe el registro
-                DB::table('tripulantes')
+                // También actualizar en la tabla tripulantes usando iata_aerolinea + crew_id
+                \DB::table('tripulantes')
                     ->where('crew_id', $tripulante->crew_id)
-                    ->where('pasaporte', $oldPassport)
+                    ->where('iata_aerolinea', $tripulante->iata_aerolinea)
                     ->update(['pasaporte' => $request->pasaporte]);
             }
             if ($request->has('identidad')) {
