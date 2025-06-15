@@ -444,7 +444,14 @@ class AuthController extends Controller
     {
         try {
             $validator = Validator::make($request->all(), [
-                'crew_id' => 'required|string|max:10|unique:tripulantes_solicitudes,crew_id',
+                'crew_id' => [
+                    'required',
+                    'string',
+                    'max:10',
+                    Rule::unique('tripulantes_solicitudes')->where(function ($query) use ($request) {
+                        return $query->where('iata_aerolinea', $request->iata_aerolinea);
+                    }),
+                ],
                 'nombres' => 'required|string|max:50',
                 'apellidos' => 'required|string|max:50',
                 'email' => 'required|email|max:100|unique:tripulantes_solicitudes,email',
@@ -454,10 +461,41 @@ class AuthController extends Controller
                 'posicion' => 'required|integer|exists:posiciones,id_posicion',
                 'password' => 'required|string|min:6',
                 'image' => 'nullable|image|mimes:jpeg,jpg,png,gif|max:5120',
+            ], [
+                // Mensajes personalizados en español
+                'crew_id.required' => 'El Crew ID es obligatorio',
+                'crew_id.unique' => 'Este Crew ID ya está registrado en esta aerolínea',
+                'crew_id.max' => 'El Crew ID no puede tener más de 10 caracteres',
+                'nombres.required' => 'Los nombres son obligatorios',
+                'nombres.max' => 'Los nombres no pueden tener más de 50 caracteres',
+                'apellidos.required' => 'Los apellidos son obligatorios',
+                'apellidos.max' => 'Los apellidos no pueden tener más de 50 caracteres',
+                'email.required' => 'El email es obligatorio',
+                'email.email' => 'El email debe tener un formato válido',
+                'email.unique' => 'Este email ya está registrado',
+                'email.max' => 'El email no puede tener más de 100 caracteres',
+                'pasaporte.required' => 'El número de pasaporte es obligatorio',
+                'pasaporte.unique' => 'Este número de pasaporte ya está registrado',
+                'pasaporte.max' => 'El número de pasaporte no puede tener más de 20 caracteres',
+                'iata_aerolinea.required' => 'La aerolínea es obligatoria',
+                'iata_aerolinea.size' => 'El código de aerolínea debe tener exactamente 2 caracteres',
+                'iata_aerolinea.exists' => 'La aerolínea seleccionada no es válida',
+                'posicion.required' => 'La posición es obligatoria',
+                'posicion.integer' => 'La posición debe ser un número válido',
+                'posicion.exists' => 'La posición seleccionada no es válida',
+                'password.required' => 'La contraseña es obligatoria',
+                'password.min' => 'La contraseña debe tener al menos 6 caracteres',
+                'image.image' => 'El archivo debe ser una imagen válida',
+                'image.mimes' => 'La imagen debe ser de tipo: jpeg, jpg, png o gif',
+                'image.max' => 'La imagen no puede ser mayor a 5MB',
             ]);
 
             if ($validator->fails()) {
                 $errors = $validator->errors();
+
+                // Obtener el primer error más específico
+                $firstError = $errors->first();
+
                 $errorDetails = [];
 
                 // Manejar errores específicos
@@ -487,7 +525,7 @@ class AuthController extends Controller
 
                 return response()->json([
                     'success' => false,
-                    'message' => 'Datos de registro inválidos',
+                    'message' => $firstError, // Usar el mensaje personalizado en español
                     'errors' => $errors,
                     'error_details' => $errorDetails
                 ], 422);
