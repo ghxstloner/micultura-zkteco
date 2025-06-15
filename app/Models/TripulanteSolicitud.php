@@ -33,6 +33,8 @@ class TripulanteSolicitud extends Authenticatable
         'motivo_rechazo',
         'aprobado_por',
         'rechazado_por',
+        'email_verified',
+        'email_verified_at',
     ];
 
     protected $hidden = [
@@ -44,6 +46,7 @@ class TripulanteSolicitud extends Authenticatable
         'fecha_solicitud' => 'datetime',
         'fecha_aprobacion' => 'datetime',
         'activo' => 'boolean',
+        'email_verified' => 'boolean',
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
     ];
