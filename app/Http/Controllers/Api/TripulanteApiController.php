@@ -167,43 +167,45 @@ class TripulanteApiController extends Controller
 
             \Log::info('Marcación encontrada: ', $marcacion->toArray());
 
-            // Buscar manualmente la información relacionada
-            $lugarMarcacion = [
-                'id' => null,
-                'nombre' => 'N/A',
-                'codigo' => 'N/A',
-            ];
-
-            if ($marcacion->lugar_marcacion) {
-                $aeropuerto = \DB::table('aeropuertos')
-                    ->where('id_aeropuerto', $marcacion->lugar_marcacion)
-                    ->first();
-
-                if ($aeropuerto) {
-                    $lugarMarcacion = [
-                        'id' => $aeropuerto->id_aeropuerto,
-                        'nombre' => $aeropuerto->descripcion_aeropuerto ?? 'N/A',
-                        'codigo' => $aeropuerto->codigo_iata ?? 'N/A',
-                    ];
-                }
-            }
-
+            // Buscar información del punto de control y aeropuerto relacionado
             $puntoControl = [
                 'id' => null,
                 'descripcion' => 'N/A',
                 'aeropuerto' => 'N/A',
             ];
 
+            $lugarMarcacion = [
+                'id' => null,
+                'nombre' => 'N/A',
+                'codigo' => 'N/A',
+            ];
+
             if ($marcacion->punto_control) {
+                // Obtener punto de control con su aeropuerto relacionado
                 $punto = \DB::table('puntos_control')
-                    ->where('id_punto', $marcacion->punto_control)
+                    ->leftJoin('aeropuertos', 'puntos_control.id_aeropuerto', '=', 'aeropuertos.id_aeropuerto')
+                    ->where('puntos_control.id_punto', $marcacion->punto_control)
+                    ->select(
+                        'puntos_control.id_punto',
+                        'puntos_control.descripcion_punto',
+                        'puntos_control.id_aeropuerto',
+                        'aeropuertos.descripcion_aeropuerto',
+                        'aeropuertos.codigo_iata'
+                    )
                     ->first();
 
                 if ($punto) {
                     $puntoControl = [
                         'id' => $punto->id_punto,
                         'descripcion' => $punto->descripcion_punto ?? 'N/A',
-                        'aeropuerto' => 'N/A', // Buscaremos después si es necesario
+                        'aeropuerto' => $punto->descripcion_aeropuerto ?? 'N/A',
+                    ];
+
+                    // El lugar de marcación es el aeropuerto del punto de control
+                    $lugarMarcacion = [
+                        'id' => $punto->id_aeropuerto,
+                        'nombre' => $punto->descripcion_aeropuerto ?? 'N/A',
+                        'codigo' => $punto->codigo_iata ?? 'N/A',
                     ];
                 }
             }
