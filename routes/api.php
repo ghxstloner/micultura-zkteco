@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\TripulanteApiController;
 use App\Http\Controllers\Api\DispositivosApiController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\NotificationController;
 
 // ============================================================================
 // RUTAS ORIGINALES PARA DISPOSITIVOS ZKTECO (NO MODIFICADAS)
@@ -33,6 +34,9 @@ Route::prefix('auth')->group(function () {
 // Datos públicos necesarios para el registro
 Route::get('/posiciones', [AuthController::class, 'posiciones']);
 Route::get('/aerolineas', [AuthController::class, 'aerolineas']); // ← NUEVA
+
+// Endpoint PÚBLICO para el sistema externo (sin autenticación)
+Route::post('/notifications/planificacion-changed', [NotificationController::class, 'planificacionChanged']);
 
 // ============================================================================
 // RUTAS PROTEGIDAS POR SANCTUM (REQUIEREN AUTENTICACIÓN)
@@ -67,5 +71,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::put('/{id}', [TripulanteApiController::class, 'update']);
         Route::delete('/{id}', [TripulanteApiController::class, 'destroy']);
     });
+
+    Route::post('/notifications/register-fcm-token', [NotificationController::class, 'registerFcmToken']);
+    Route::delete('/notifications/remove-fcm-token', [NotificationController::class, 'removeFcmToken']);
 
 });
