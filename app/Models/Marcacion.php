@@ -34,19 +34,26 @@ class Marcacion extends Model
      */
     protected $fillable = [
         'id_planificacion',
+        'id_evento', // ✅ AGREGAR
         'id_tripulante',
         'crew_id',
         'fecha_marcacion',
+        'hora_entrada', // ✅ AGREGAR
+        'hora_salida',  // ✅ AGREGAR
         'hora_marcacion',
         'lugar_marcacion',
         'punto_control',
         'procesado',
         'tipo_marcacion',
         'usuario',
+        'transporte', // ✅ AGREGAR
+        'alimentacion', // ✅ AGREGAR
     ];
 
     protected $casts = [
         'fecha_marcacion' => 'date',
+        'transporte' => 'decimal:2',
+        'alimentacion' => 'decimal:2',
     ];
 
     // Relaciones
