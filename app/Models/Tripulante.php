@@ -68,7 +68,7 @@ class Tripulante extends Model
     {
         if ($this->imagen && $this->iata_aerolinea && $this->crew_id) {
             $baseUrl = env('IMAGEN_URL_BASE');
-            return "{$baseUrl}/{$this->iata_aerolinea}/{$this->crew_id}/{$this->imagen}";
+            return "{$baseUrl}/{$this->crew_id}/{$this->imagen}";
         }
         return null;
     }
