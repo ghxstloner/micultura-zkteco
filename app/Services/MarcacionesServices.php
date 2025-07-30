@@ -14,62 +14,78 @@ use Carbon\Carbon;
 class MarcacionesServices
 {
     /**
-     * Registra marcaciones y las asocia con planificaciones según reglas específicas
-     * ACTUALIZADO: Implementa la misma lógica de Python para entrada/salida
+     * Registra marcaciones y las asocia con planificaciones según reglas específicas.
+     * Implementa lógica de entrada/salida y logs detallados para depuración.
      *
      * @param array $proFxAttLogList Lista de objetos ProFxAttLog a procesar
      * @return void
      */
     public function registrarMarcaciones(array $proFxAttLogList)
     {
-        foreach ($proFxAttLogList as $proFxAttLog) {
+        Log::info("--- INICIO DEL PROCESO DE MARCACIONES ---");
+        Log::info("Se van a procesar " . count($proFxAttLogList) . " registros de ZKTeco.");
+
+        foreach ($proFxAttLogList as $index => $proFxAttLog) {
+            $id_tripulante_from_pin = (int) $proFxAttLog->USER_PIN;
+            Log::info("--- Procesando registro " . ($index + 1) . " para USER_PIN: {$id_tripulante_from_pin} ---");
+
             try {
-                // Extracción y preparación de datos iniciales
-                $id_tripulante_from_pin = (int) $proFxAttLog->USER_PIN;
+                // 1. Extracción y preparación de datos iniciales
                 $tiempoMarcacionCompleto = Carbon::parse($proFxAttLog->VERIFY_TIME);
                 $fechaMarcacionActual = $tiempoMarcacionCompleto->format('Y-m-d');
                 $horaMarcacionActual = $tiempoMarcacionCompleto->format('H:i:s');
+                Log::info("Datos de marcación: Fecha='{$fechaMarcacionActual}', Hora='{$horaMarcacionActual}'");
 
-                // Valores por defecto
-                $id_planificacion_para_esta_marcacion = 0;
-                $crew_id_del_tripulante = null;
-                $punto_control = null;
-
-                // Obtención de datos del tripulante
+                // 2. Obtención de datos del tripulante
                 $tripulante = Tripulante::where('id_tripulante', $id_tripulante_from_pin)->first();
 
-                if (!$tripulante || !$tripulante->crew_id || !$tripulante->iata_aerolinea) {
-                    Log::warning("Tripulante no encontrado o datos incompletos para USER_PIN: {$id_tripulante_from_pin}");
+                if (!$tripulante) {
+                    Log::warning("Tripulante con USER_PIN: {$id_tripulante_from_pin} NO ENCONTRADO en la base de datos. Saltando registro.");
+                    continue;
+                }
+
+                if (!$tripulante->crew_id || !$tripulante->iata_aerolinea) {
+                    Log::warning("Tripulante con USER_PIN: {$id_tripulante_from_pin} tiene datos incompletos (crew_id o iata_aerolinea). Saltando registro.");
                     continue;
                 }
 
                 $crew_id_del_tripulante = $tripulante->crew_id;
+                Log::info("Tripulante encontrado: ID={$tripulante->id_tripulante}, CrewID='{$crew_id_del_tripulante}'");
 
-                // ✅ NUEVA LÓGICA: Verificar marcaciones existentes para hoy (IGUAL QUE PYTHON)
+                // 3. Verificar marcaciones existentes para hoy
                 $marcacionExistente = Marcacion::where('id_tripulante', $id_tripulante_from_pin)
                     ->whereDate('fecha_marcacion', $fechaMarcacionActual)
                     ->first();
 
-                // ✅ DETERMINAR TIPO DE MARCACIÓN (MISMA LÓGICA QUE PYTHON)
+                // 4. Determinar tipo de marcación (Entrada o Salida)
+                $tipoMarcacion = 1; // Por defecto es Entrada
+                $procesado = '0';   // Por defecto no procesado
+
                 if ($marcacionExistente) {
-                    // Ya existe marcación, determinar si es entrada o salida
+                    Log::info("Se encontró una marcación existente para hoy (ID: {$marcacionExistente->id_marcacion}).");
                     if ($marcacionExistente->hora_entrada && !$marcacionExistente->hora_salida) {
-                        // Ya tiene entrada, esta será salida
-                        $tipoMarcacion = 2;
-                        $procesado = '1'; // Marcar como procesado cuando es salida
-                    } else {
-                        // Ya tiene ambas, actualizar salida
-                        $tipoMarcacion = 2;
+                        $tipoMarcacion = 2; // Ya tiene entrada, esta es Salida
                         $procesado = '1';
+                        Log::info("La marcación existente tiene ENTRADA pero no SALIDA. Esta nueva marcación será de tipo SALIDA.");
+                    } else {
+                        $tipoMarcacion = 2; // Ya tiene ambas, se considera actualización de Salida
+                        $procesado = '1';
+                        Log::info("La marcación existente ya tiene ENTRADA y SALIDA. Se actualizará la SALIDA.");
                     }
                 } else {
-                    // Primera marcación del día
-                    $tipoMarcacion = 1;
-                    $procesado = '0'; // No procesado hasta que haya salida
+                    Log::info("No se encontró marcación previa para hoy. Esta será una marcación de tipo ENTRADA.");
                 }
 
-                // Buscar planificación pendiente SOLO si no existe marcación previa con planificación
-                if (!$marcacionExistente || $marcacionExistente->id_planificacion == 0) {
+                // 5. Buscar planificación asociada
+                $id_planificacion_para_esta_marcacion = 0;
+
+                // Si la marcación ya existe y tiene una planificación, la reutilizamos.
+                if ($marcacionExistente && $marcacionExistente->id_planificacion > 0) {
+                    $id_planificacion_para_esta_marcacion = $marcacionExistente->id_planificacion;
+                    Log::info("Reutilizando id_planificacion de la marcación existente: {$id_planificacion_para_esta_marcacion}");
+                } else {
+                    // Si no, buscamos una planificación pendiente
+                    Log::info("Buscando planificación pendiente para CrewID='{$crew_id_del_tripulante}' en fecha '{$fechaMarcacionActual}'");
                     $planificacionPendiente = Planificacion::where('crew_id', $crew_id_del_tripulante)
                         ->where('iata_aerolinea', $tripulante->iata_aerolinea)
                         ->whereDate('fecha_vuelo', $fechaMarcacionActual)
@@ -78,91 +94,89 @@ class MarcacionesServices
 
                     if ($planificacionPendiente) {
                         $id_planificacion_para_esta_marcacion = $planificacionPendiente->id;
-
-                        // ✅ CAMBIAR ESTATUS SOLO CUANDO ES SALIDA (IGUAL QUE PYTHON)
-                        if ($tipoMarcacion == 2) {
-                            $planificacionPendiente->estatus = 'R';
-                            $planificacionPendiente->save();
-                            Log::info("Estatus de planificación {$planificacionPendiente->id} actualizado a 'R'");
-                        }
-                    }
-                } else {
-                    // Usar la planificación existente de la marcación previa
-                    $id_planificacion_para_esta_marcacion = $marcacionExistente->id_planificacion;
-
-                    // Si es salida y hay planificación, marcar como procesada
-                    if ($tipoMarcacion == 2 && $id_planificacion_para_esta_marcacion > 0) {
-                        $planificacion = Planificacion::find($id_planificacion_para_esta_marcacion);
-                        if ($planificacion && $planificacion->estatus == 'P') {
-                            $planificacion->estatus = 'R';
-                            $planificacion->save();
-                            Log::info("Estatus de planificación {$planificacion->id} actualizado a 'R'");
-                        }
+                        Log::info("Planificación PENDIENTE encontrada (ID: {$planificacionPendiente->id}).");
+                    } else {
+                        Log::warning("No se encontró ninguna planificación PENDIENTE para CrewID='{$crew_id_del_tripulante}' en la fecha '{$fechaMarcacionActual}'. La marcación se guardará sin planificación asociada.");
                     }
                 }
 
-                // Obtención del lugar de marcación y punto de control
+                // 6. Obtención del lugar de marcación
                 $deviceSn = $proFxAttLog->DEVICE_SN;
-                $lugarMarcacionDeterminado = $deviceSn;
-                $deviceId = null;
-
+                $punto_control = null;
+                $lugarMarcacionDeterminado = $deviceSn; // Valor por defecto
                 $deviceInfo = ProFxDeviceInfo::where('DEVICE_SN', $deviceSn)->first();
+
                 if ($deviceInfo && $deviceInfo->DEVICE_ID) {
-                    $deviceId = $deviceInfo->DEVICE_ID;
-                    $lugarMarcacionDeterminado = $deviceId;
-
-                    $dispositivoPunto = DB::table('dispositivos_puntos')
-                        ->where('id_device', $deviceId)
-                        ->first();
-
+                    $lugarMarcacionDeterminado = $deviceInfo->DEVICE_ID;
+                    $dispositivoPunto = DB::table('dispositivos_puntos')->where('id_device', $deviceInfo->DEVICE_ID)->first();
                     if ($dispositivoPunto) {
                         $punto_control = $dispositivoPunto->id_punto;
                     }
                 }
+                Log::info("Lugar de marcación determinado: '{$lugarMarcacionDeterminado}', Punto de control: '{$punto_control}'");
 
-                // ✅ GUARDAR O ACTUALIZAR MARCACIÓN (MISMA LÓGICA QUE PYTHON)
+                // 7. Guardar o Actualizar Marcación
+                $datosMarcacion = [
+                    'id_planificacion' => $id_planificacion_para_esta_marcacion,
+                    'hora_marcacion' => $horaMarcacionActual,
+                    'lugar_marcacion' => $lugarMarcacionDeterminado,
+                    'punto_control' => $punto_control,
+                    'procesado' => $procesado,
+                    'tipo_marcacion' => $tipoMarcacion,
+                    'usuario' => 'zkteco_system'
+                ];
+
                 if ($marcacionExistente) {
-                    // Actualizar marcación existente
-                    $marcacionExistente->update([
-                        'id_planificacion' => $id_planificacion_para_esta_marcacion ?: $marcacionExistente->id_planificacion,
-                        'hora_entrada' => $tipoMarcacion == 1 ? $horaMarcacionActual : $marcacionExistente->hora_entrada,
-                        'hora_salida' => $tipoMarcacion == 2 ? $horaMarcacionActual : $marcacionExistente->hora_salida,
-                        'hora_marcacion' => $horaMarcacionActual,
-                        'lugar_marcacion' => $lugarMarcacionDeterminado,
-                        'punto_control' => $punto_control,
-                        'procesado' => $procesado,
-                        'tipo_marcacion' => $tipoMarcacion,
-                        'usuario' => 'zkteco_system'
-                    ]);
+                    // --- ACTUALIZAR ---
+                    $datosMarcacion['hora_salida'] = $tipoMarcacion == 2 ? $horaMarcacionActual : $marcacionExistente->hora_salida;
 
-                    Log::info("Marcación actualizada - Tripulante: {$crew_id_del_tripulante}, Tipo: {$tipoMarcacion}, Procesado: {$procesado}");
+                    Log::info("Intentando ACTUALIZAR marcacion ID: {$marcacionExistente->id_marcacion} con los siguientes datos:", $datosMarcacion);
+                    $resultado = $marcacionExistente->update($datosMarcacion);
+
+                    if ($resultado) {
+                        Log::info("¡ÉXITO! Marcación actualizada correctamente.");
+                    } else {
+                        Log::error("¡FALLO! La actualización de la marcación ID: {$marcacionExistente->id_marcacion} no tuvo éxito. Revisa el modelo 'Marcacion' y la propiedad '\$fillable'.");
+                    }
                 } else {
-                    // Crear nueva marcación
-                    $marcacion = new Marcacion();
-                    $marcacion->id_planificacion = $id_planificacion_para_esta_marcacion;
-                    $marcacion->id_tripulante = $id_tripulante_from_pin;
-                    $marcacion->crew_id = $crew_id_del_tripulante;
-                    $marcacion->fecha_marcacion = $fechaMarcacionActual;
-                    $marcacion->hora_entrada = $tipoMarcacion == 1 ? $horaMarcacionActual : null;
-                    $marcacion->hora_salida = $tipoMarcacion == 2 ? $horaMarcacionActual : null;
-                    $marcacion->hora_marcacion = $horaMarcacionActual;
-                    $marcacion->lugar_marcacion = $lugarMarcacionDeterminado;
-                    $marcacion->punto_control = $punto_control;
-                    $marcacion->procesado = $procesado;
-                    $marcacion->tipo_marcacion = $tipoMarcacion;
-                    $marcacion->usuario = 'zkteco_system';
-                    $marcacion->save();
+                    // --- CREAR ---
+                    $datosMarcacion['id_tripulante'] = $id_tripulante_from_pin;
+                    $datosMarcacion['crew_id'] = $crew_id_del_tripulante;
+                    $datosMarcacion['fecha_marcacion'] = $fechaMarcacionActual;
+                    $datosMarcacion['hora_entrada'] = $horaMarcacionActual;
+                    $datosMarcacion['hora_salida'] = null;
 
-                    Log::info("Nueva marcación creada - Tripulante: {$crew_id_del_tripulante}, Tipo: {$tipoMarcacion}, Procesado: {$procesado}");
+                    Log::info("Intentando CREAR nueva marcación con los siguientes datos:", $datosMarcacion);
+                    $marcacionNueva = new Marcacion($datosMarcacion);
+                    $resultado = $marcacionNueva->save();
+
+                    if ($resultado) {
+                        Log::info("¡ÉXITO! Nueva marcación creada con ID: {$marcacionNueva->id_marcacion}");
+                    } else {
+                        Log::error("¡FALLO! La creación de la nueva marcación no tuvo éxito.");
+                    }
+                }
+
+                // 8. Actualizar estatus de planificación si es marcación de salida y hay planificación
+                if ($tipoMarcacion == 2 && $id_planificacion_para_esta_marcacion > 0) {
+                    $planificacionParaActualizar = Planificacion::find($id_planificacion_para_esta_marcacion);
+                    if ($planificacionParaActualizar && $planificacionParaActualizar->estatus == 'P') {
+                        $planificacionParaActualizar->estatus = 'R'; // Realizado
+                        $planificacionParaActualizar->save();
+                        Log::info("Estatus de planificación {$planificacionParaActualizar->id} actualizado a 'R'.");
+                    }
                 }
 
             } catch (\Exception $e) {
-                Log::error("Error al procesar marcación para USER_PIN: {$proFxAttLog->USER_PIN}", [
+                Log::error("--- ERROR GRAVE al procesar marcación para USER_PIN: {$id_tripulante_from_pin} ---", [
                     'mensaje' => $e->getMessage(),
+                    'archivo' => $e->getFile(),
+                    'linea' => $e->getLine(),
                     'stacktrace' => $e->getTraceAsString()
                 ]);
-                continue;
+                continue; // Saltar al siguiente registro en caso de error
             }
         }
+        Log::info("--- FIN DEL PROCESO DE MARCACIONES ---");
     }
 }

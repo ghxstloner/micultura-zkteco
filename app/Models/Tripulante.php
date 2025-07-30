@@ -66,7 +66,7 @@ class Tripulante extends Model
      */
     public function getImagenUrlAttribute(): ?string
     {
-        if ($this->imagen && $this->iata_aerolinea && $this->crew_id) {
+        if ($this->imagen && $this->crew_id) {
             $baseUrl = env('IMAGEN_URL_BASE');
             return "{$baseUrl}/{$this->crew_id}/{$this->imagen}";
         }
