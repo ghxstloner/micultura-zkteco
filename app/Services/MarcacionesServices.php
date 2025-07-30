@@ -78,10 +78,12 @@ class MarcacionesServices
 
                 // 5. Buscar planificación asociada
                 $id_planificacion_para_esta_marcacion = 0;
+                $planificacionAsociada = null;
 
                 // Si la marcación ya existe y tiene una planificación, la reutilizamos.
                 if ($marcacionExistente && $marcacionExistente->id_planificacion > 0) {
                     $id_planificacion_para_esta_marcacion = $marcacionExistente->id_planificacion;
+                    $planificacionAsociada = Planificacion::find($id_planificacion_para_esta_marcacion); // Obtenemos el objeto para leer el id_evento
                     Log::info("Reutilizando id_planificacion de la marcación existente: {$id_planificacion_para_esta_marcacion}");
                 } else {
                     // Si no, buscamos una planificación pendiente
@@ -92,8 +94,9 @@ class MarcacionesServices
                         ->first();
 
                     if ($planificacionPendiente) {
-                        $id_planificacion_para_esta_marcacion = $planificacionPendiente->id;
-                        Log::info("Planificación PENDIENTE encontrada (ID: {$planificacionPendiente->id}).");
+                        $planificacionAsociada = $planificacionPendiente; // Guardamos el objeto
+                        $id_planificacion_para_esta_marcacion = $planificacionAsociada->id;
+                        Log::info("Planificación PENDIENTE encontrada (ID: {$planificacionAsociada->id}).");
                     } else {
                         Log::warning("No se encontró ninguna planificación PENDIENTE para CrewID='{$crew_id_del_tripulante}' en la fecha '{$fechaMarcacionActual}'. La marcación se guardará sin planificación asociada.");
                     }
@@ -117,6 +120,8 @@ class MarcacionesServices
                 // 7. Guardar o Actualizar Marcación
                 $datosMarcacion = [
                     'id_planificacion' => $id_planificacion_para_esta_marcacion,
+                    // ✅ CAMBIO 2: Añadir el id_evento desde el objeto de planificación.
+                    'id_evento' => $planificacionAsociada ? $planificacionAsociada->id_evento : null,
                     'hora_marcacion' => $horaMarcacionActual,
                     'lugar_marcacion' => $lugarMarcacionDeterminado,
                     'punto_control' => $punto_control,
@@ -135,7 +140,7 @@ class MarcacionesServices
                     if ($resultado) {
                         Log::info("¡ÉXITO! Marcación actualizada correctamente.");
                     } else {
-                        Log::error("¡FALLO! La actualización de la marcación ID: {$marcacionExistente->id_marcacion} no tuvo éxito. Revisa el modelo 'Marcacion' y la propiedad '\$fillable'.");
+                        Log::error("¡FALLO! La actualización de la marcación ID: {$marcacionExistente->id_marcacion} no tuvo éxito.");
                     }
                 } else {
                     // --- CREAR ---
@@ -157,13 +162,10 @@ class MarcacionesServices
                 }
 
                 // 8. Actualizar estatus de planificación si es marcación de salida y hay planificación
-                if ($tipoMarcacion == 2 && $id_planificacion_para_esta_marcacion > 0) {
-                    $planificacionParaActualizar = Planificacion::find($id_planificacion_para_esta_marcacion);
-                    if ($planificacionParaActualizar && $planificacionParaActualizar->estatus == 'P') {
-                        $planificacionParaActualizar->estatus = 'R'; // Realizado
-                        $planificacionParaActualizar->save();
-                        Log::info("Estatus de planificación {$planificacionParaActualizar->id} actualizado a 'R'.");
-                    }
+                if ($tipoMarcacion == 2 && $planificacionAsociada && $planificacionAsociada->estatus == 'P') {
+                    $planificacionAsociada->estatus = 'R'; // Realizado
+                    $planificacionAsociada->save();
+                    Log::info("Estatus de planificación {$planificacionAsociada->id} actualizado a 'R'.");
                 }
 
             } catch (\Exception $e) {
