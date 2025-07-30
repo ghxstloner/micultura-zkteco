@@ -80,13 +80,11 @@ class MarcacionesServices
                 $id_planificacion_para_esta_marcacion = 0;
                 $planificacionAsociada = null;
 
-                // Si la marcación ya existe y tiene una planificación, la reutilizamos.
                 if ($marcacionExistente && $marcacionExistente->id_planificacion > 0) {
                     $id_planificacion_para_esta_marcacion = $marcacionExistente->id_planificacion;
-                    $planificacionAsociada = Planificacion::find($id_planificacion_para_esta_marcacion); // Obtenemos el objeto para leer el id_evento
+                    $planificacionAsociada = Planificacion::find($id_planificacion_para_esta_marcacion);
                     Log::info("Reutilizando id_planificacion de la marcación existente: {$id_planificacion_para_esta_marcacion}");
                 } else {
-                    // Si no, buscamos una planificación pendiente
                     Log::info("Buscando planificación pendiente para CrewID='{$crew_id_del_tripulante}' en fecha '{$fechaMarcacionActual}'");
                     $planificacionPendiente = Planificacion::where('crew_id', $crew_id_del_tripulante)
                         ->whereDate('fecha_vuelo', $fechaMarcacionActual)
@@ -94,37 +92,57 @@ class MarcacionesServices
                         ->first();
 
                     if ($planificacionPendiente) {
-                        $planificacionAsociada = $planificacionPendiente; // Guardamos el objeto
+                        $planificacionAsociada = $planificacionPendiente;
                         $id_planificacion_para_esta_marcacion = $planificacionAsociada->id;
                         Log::info("Planificación PENDIENTE encontrada (ID: {$planificacionAsociada->id}).");
                     } else {
-                        Log::warning("No se encontró ninguna planificación PENDIENTE para CrewID='{$crew_id_del_tripulante}' en la fecha '{$fechaMarcacionActual}'. La marcación se guardará sin planificación asociada.");
+                        Log::warning("No se encontró ninguna planificación PENDIENTE para CrewID='{$crew_id_del_tripulante}' en la fecha '{$fechaMarcacionActual}'.");
                     }
                 }
 
-                // 6. Obtención del lugar de marcación
-                $deviceSn = $proFxAttLog->DEVICE_SN;
+                // 6. OBTENCIÓN DE LUGAR Y PUNTO DE CONTROL (LÓGICA MODIFICADA SEGÚN REQUERIMIENTO)
+                $lugarMarcacionDeterminado = null;
                 $punto_control = null;
-                $lugarMarcacionDeterminado = $deviceSn; // Valor por defecto
+
+                // 6.1. Determinar Lugar de Marcación desde el Evento de la Planificación
+                if ($planificacionAsociada && $planificacionAsociada->id_evento) {
+                    Log::info("Buscando evento ID: {$planificacionAsociada->id_evento} para obtener lugar de marcación.");
+                    // NOTA: Se asume que la tabla de eventos se llama 'eventos' y la columna es 'id_lugar_evento'. Ajusta si es necesario.
+                    $evento = DB::table('eventos')->where('id', $planificacionAsociada->id_evento)->first();
+                    if ($evento && isset($evento->id_lugar_evento)) {
+                        $lugarMarcacionDeterminado = $evento->id_lugar_evento;
+                        Log::info("Lugar de marcación asignado desde el evento: '{$lugarMarcacionDeterminado}'");
+                    } else {
+                        Log::warning("Evento ID: {$planificacionAsociada->id_evento} no se encontró o no tiene la columna 'id_lugar_evento'.");
+                    }
+                } else {
+                    Log::warning("No hay planificación o evento asociado. No se puede determinar el lugar de marcación.");
+                }
+
+                // 6.2. Determinar Punto de Control desde el Dispositivo
+                $deviceSn = $proFxAttLog->DEVICE_SN;
                 $deviceInfo = ProFxDeviceInfo::where('DEVICE_SN', $deviceSn)->first();
 
                 if ($deviceInfo && $deviceInfo->DEVICE_ID) {
-                    $lugarMarcacionDeterminado = $deviceInfo->DEVICE_ID;
                     $dispositivoPunto = DB::table('dispositivos_puntos')->where('id_device', $deviceInfo->DEVICE_ID)->first();
                     if ($dispositivoPunto) {
-                        $punto_control = $dispositivoPunto->id_punto;
+                        // Se asigna el ID del dispositivo como el punto de control, según solicitado.
+                        $punto_control = $dispositivoPunto->id_device; // Es igual a $deviceInfo->DEVICE_ID
+                        Log::info("Punto de control asignado: '{$punto_control}' (ID del dispositivo verificado en 'dispositivos_puntos').");
+                    } else {
+                        Log::warning("El dispositivo con ID '{$deviceInfo->DEVICE_ID}' (SN: {$deviceSn}) no está registrado en 'dispositivos_puntos'.");
                     }
+                } else {
+                    Log::warning("No se encontró información del dispositivo para SN: '{$deviceSn}'. No se puede determinar el punto de control.");
                 }
-                Log::info("Lugar de marcación determinado: '{$lugarMarcacionDeterminado}', Punto de control: '{$punto_control}'");
 
                 // 7. Guardar o Actualizar Marcación
                 $datosMarcacion = [
                     'id_planificacion' => $id_planificacion_para_esta_marcacion,
-                    // ✅ CAMBIO 2: Añadir el id_evento desde el objeto de planificación.
                     'id_evento' => $planificacionAsociada ? $planificacionAsociada->id_evento : null,
                     'hora_marcacion' => $horaMarcacionActual,
-                    'lugar_marcacion' => $lugarMarcacionDeterminado,
-                    'punto_control' => $punto_control,
+                    'lugar_marcacion' => $lugarMarcacionDeterminado, // ✅ NUEVA LÓGICA
+                    'punto_control' => $punto_control,             // ✅ NUEVA LÓGICA
                     'procesado' => $procesado,
                     'tipo_marcacion' => $tipoMarcacion,
                     'usuario' => 'zkteco_system'
