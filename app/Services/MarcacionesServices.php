@@ -100,20 +100,21 @@ class MarcacionesServices
                     }
                 }
 
-                // 6. OBTENCIÓN DE LUGAR Y PUNTO DE CONTROL (LÓGICA MODIFICADA SEGÚN REQUERIMIENTO)
+                // 6. OBTENCIÓN DE LUGAR Y PUNTO DE CONTROL
                 $lugarMarcacionDeterminado = null;
                 $punto_control = null;
 
                 // 6.1. Determinar Lugar de Marcación desde el Evento de la Planificación
                 if ($planificacionAsociada && $planificacionAsociada->id_evento) {
                     Log::info("Buscando evento ID: {$planificacionAsociada->id_evento} para obtener lugar de marcación.");
-                    // NOTA: Se asume que la tabla de eventos se llama 'eventos' y la columna es 'id_lugar_evento'. Ajusta si es necesario.
                     $evento = DB::table('eventos')->where('id_evento', $planificacionAsociada->id_evento)->first();
-                    if ($evento && isset($evento->id_lugar_evento)) {
-                        $lugarMarcacionDeterminado = $evento->id_lugar_evento;
+
+                    // ✅ CORRECCIÓN: Se busca la columna 'id_lugar' que sí existe en la tabla 'eventos'.
+                    if ($evento && isset($evento->id_lugar)) {
+                        $lugarMarcacionDeterminado = $evento->id_lugar;
                         Log::info("Lugar de marcación asignado desde el evento: '{$lugarMarcacionDeterminado}'");
                     } else {
-                        Log::warning("Evento ID: {$planificacionAsociada->id_evento} no se encontró o no tiene la columna 'id_lugar_evento'.");
+                        Log::warning("Evento ID: {$planificacionAsociada->id_evento} no se encontró o no tiene la columna 'id_lugar'.");
                     }
                 } else {
                     Log::warning("No hay planificación o evento asociado. No se puede determinar el lugar de marcación.");
@@ -127,7 +128,7 @@ class MarcacionesServices
                     $dispositivoPunto = DB::table('dispositivos_puntos')->where('id_device', $deviceInfo->DEVICE_ID)->first();
                     if ($dispositivoPunto) {
                         // Se asigna el ID del dispositivo como el punto de control, según solicitado.
-                        $punto_control = $dispositivoPunto->id_device; // Es igual a $deviceInfo->DEVICE_ID
+                        $punto_control = $dispositivoPunto->id_device;
                         Log::info("Punto de control asignado: '{$punto_control}' (ID del dispositivo verificado en 'dispositivos_puntos').");
                     } else {
                         Log::warning("El dispositivo con ID '{$deviceInfo->DEVICE_ID}' (SN: {$deviceSn}) no está registrado en 'dispositivos_puntos'.");
@@ -141,8 +142,8 @@ class MarcacionesServices
                     'id_planificacion' => $id_planificacion_para_esta_marcacion,
                     'id_evento' => $planificacionAsociada ? $planificacionAsociada->id_evento : null,
                     'hora_marcacion' => $horaMarcacionActual,
-                    'lugar_marcacion' => $lugarMarcacionDeterminado, // ✅ NUEVA LÓGICA
-                    'punto_control' => $punto_control,             // ✅ NUEVA LÓGICA
+                    'lugar_marcacion' => $lugarMarcacionDeterminado,
+                    'punto_control' => $punto_control,
                     'procesado' => $procesado,
                     'tipo_marcacion' => $tipoMarcacion,
                     'usuario' => 'zkteco_system'
