@@ -141,14 +141,14 @@ class ZKTecoSyncService
         Log::info("Iniciando obtención de imagen para tripulante ID: {$tripulanteId}");
 
         // LOG 1: Verificar datos iniciales del tripulante
-        if (empty($tripulante->imagen) || empty($tripulante->iata_aerolinea) || empty($tripulante->crew_id)) {
+        if (empty($tripulante->imagen) || empty($tripulante->crew_id)) {
             Log::warning("Tripulante ID: {$tripulanteId} tiene datos incompletos. Imagen: '{$tripulante->imagen}', IATA: '{$tripulante->iata_aerolinea}', CrewID: '{$tripulante->crew_id}'.");
             return null;
         }
 
         try {
             // LOG 2: Esta es la ruta que se está construyendo. Aquí sabrás de dónde intenta sacar la foto.
-            $rutaImagen = $tripulante->iata_aerolinea . '/' . $tripulante->crew_id . '/' . $tripulante->imagen;
+            $rutaImagen = $tripulante->crew_id . '/' . $tripulante->imagen;
             Log::info("Tripulante ID: {$tripulanteId}. Ruta de imagen construida: '{$rutaImagen}'");
 
             // Obtener el disco de imágenes configurado en filesystems.php (crew_images)
