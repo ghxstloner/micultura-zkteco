@@ -108,7 +108,7 @@ class MarcacionesServices
                 if ($planificacionAsociada && $planificacionAsociada->id_evento) {
                     Log::info("Buscando evento ID: {$planificacionAsociada->id_evento} para obtener lugar de marcación.");
                     // NOTA: Se asume que la tabla de eventos se llama 'eventos' y la columna es 'id_lugar_evento'. Ajusta si es necesario.
-                    $evento = DB::table('eventos')->where('id', $planificacionAsociada->id_evento)->first();
+                    $evento = DB::table('eventos')->where('id_evento', $planificacionAsociada->id_evento)->first();
                     if ($evento && isset($evento->id_lugar_evento)) {
                         $lugarMarcacionDeterminado = $evento->id_lugar_evento;
                         Log::info("Lugar de marcación asignado desde el evento: '{$lugarMarcacionDeterminado}'");
