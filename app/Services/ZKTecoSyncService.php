@@ -136,41 +136,51 @@ class ZKTecoSyncService
      */
     private function obtenerImagenTripulante($tripulante): ?array
     {
-        // Si no tiene imagen, retornar null
+        $tripulanteId = $tripulante->id_tripulante ?? $tripulante->crew_id;
+        Log::info("======================================================");
+        Log::info("Iniciando obtención de imagen para tripulante ID: {$tripulanteId}");
+
+        // LOG 1: Verificar datos iniciales del tripulante
         if (empty($tripulante->imagen) || empty($tripulante->iata_aerolinea) || empty($tripulante->crew_id)) {
+            Log::warning("Tripulante ID: {$tripulanteId} tiene datos incompletos. Imagen: '{$tripulante->imagen}', IATA: '{$tripulante->iata_aerolinea}', CrewID: '{$tripulante->crew_id}'.");
             return null;
         }
 
         try {
-            // Construir la ruta de la imagen en el FTP
+            // LOG 2: Esta es la ruta que se está construyendo. Aquí sabrás de dónde intenta sacar la foto.
             $rutaImagen = $tripulante->iata_aerolinea . '/' . $tripulante->crew_id . '/' . $tripulante->imagen;
+            Log::info("Tripulante ID: {$tripulanteId}. Ruta de imagen construida: '{$rutaImagen}'");
 
-            // Obtener el disco de imágenes
+            // Obtener el disco de imágenes configurado en filesystems.php (crew_images)
             $disk = Storage::disk('crew_images');
 
-            // Verificar si existe la imagen
+            // LOG 3: Verificar si la imagen existe en el FTP
             if (!$disk->exists($rutaImagen)) {
-                Log::warning("Imagen no encontrada en FTP: {$rutaImagen}");
+                Log::warning("Tripulante ID: {$tripulanteId}. La imagen NO fue encontrada en el FTP en la ruta: {$rutaImagen}");
                 return null;
             }
 
-            // Obtener el contenido de la imagen
+            Log::info("Tripulante ID: {$tripulanteId}. Imagen SÍ encontrada. Descargando contenido...");
             $fotoContent = $disk->get($rutaImagen);
 
             if (empty($fotoContent)) {
-                throw new \Exception("Contenido de imagen vacío");
+                throw new \Exception("Contenido de imagen vacío después de la descarga.");
             }
 
-            // Verificar que sea una imagen válida
+            Log::info("Tripulante ID: {$tripulanteId}. Contenido descargado, tamaño: " . strlen($fotoContent) . " bytes. Comprimiendo...");
+
+            // ... (el resto de la función para comprimir y retornar la imagen no cambia)
             $finfo = new \finfo(FILEINFO_MIME_TYPE);
             $mimeType = $finfo->buffer($fotoContent);
 
             if (strpos($mimeType, 'image/') !== 0) {
-                throw new \Exception("El archivo no es una imagen válida");
+                throw new \Exception("El archivo no es una imagen válida, tipo MIME detectado: {$mimeType}");
             }
 
-            // Comprimir la imagen
             $compressedImage = $this->compressImage($fotoContent);
+
+            Log::info("Tripulante ID: {$tripulanteId}. Imagen procesada y comprimida exitosamente.");
+            Log::info("======================================================");
 
             return [
                 'base64' => base64_encode($compressedImage),
@@ -179,7 +189,8 @@ class ZKTecoSyncService
             ];
 
         } catch (\Exception $e) {
-            Log::error("Error obteniendo imagen del tripulante {$tripulante->id_tripulante}: " . $e->getMessage());
+            Log::error("Tripulante ID: {$tripulanteId}. EXCEPCIÓN al obtener imagen: " . $e->getMessage());
+            Log::info("======================================================");
             return null;
         }
     }
