@@ -44,8 +44,8 @@ class MarcacionesServices
                     continue;
                 }
 
-                if (!$tripulante->crew_id || !$tripulante->iata_aerolinea) {
-                    Log::warning("Tripulante con USER_PIN: {$id_tripulante_from_pin} tiene datos incompletos (crew_id o iata_aerolinea). Saltando registro.");
+                if (!$tripulante->crew_id) {
+                    Log::warning("Tripulante con USER_PIN: {$id_tripulante_from_pin} tiene datos incompletos (crew_id). Saltando registro.");
                     continue;
                 }
 
@@ -87,7 +87,6 @@ class MarcacionesServices
                     // Si no, buscamos una planificación pendiente
                     Log::info("Buscando planificación pendiente para CrewID='{$crew_id_del_tripulante}' en fecha '{$fechaMarcacionActual}'");
                     $planificacionPendiente = Planificacion::where('crew_id', $crew_id_del_tripulante)
-                        ->where('iata_aerolinea', $tripulante->iata_aerolinea)
                         ->whereDate('fecha_vuelo', $fechaMarcacionActual)
                         ->where('estatus', 'P')
                         ->first();
